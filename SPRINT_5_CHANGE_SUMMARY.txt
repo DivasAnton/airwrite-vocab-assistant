@@ -1,0 +1,49 @@
+Sprint 5 - Air Drawing Canvas
+
+Files added:
+- app/drawing/air_canvas.py
+  Added AirCanvas for a persistent independent NumPy canvas, line drawing, clear, empty-state tracking, image copying, and size reset.
+- app/drawing/stroke_manager.py
+  Added LineSegment and StrokeManager for previous/current point management, lost-tracking reset, and maximum jump protection.
+- app/drawing/canvas_overlay_renderer.py
+  Added CanvasOverlayRenderer to overlay canvas strokes onto camera frames without mutating inputs.
+- tests/test_air_canvas.py
+  Added tests for canvas shape, empty state, drawing, clear, invalid size/thickness, image copy safety, and size reset.
+- tests/test_stroke_manager.py
+  Added tests for first point behavior, segment creation, lost tracking reset, jump guard, and manual reset.
+- tests/test_canvas_overlay_renderer.py
+  Added tests for empty canvas output, visible strokes, input immutability, shape mismatch, dtype validation, and opacity behavior.
+- docs/sprint_5_air_canvas_test_plan.md
+  Added manual air drawing canvas test plan, character smoke tests, and privacy notes.
+
+Files changed:
+- app/main.py
+  Integrated AirCanvas, StrokeManager, and CanvasOverlayRenderer into the camera loop.
+  Canvas is initialized from actual frame dimensions, persists across frames, resets when frame size changes, overlays on preview, and clears with the configured key.
+- app/utils/config.py
+  Added canvas color parsing, stroke thickness, maximum point distance, overlay opacity, display toggles, clear key, and validation.
+- .env.example
+  Added Sprint 5 canvas configuration.
+- .env
+  Updated local Sprint 5 canvas configuration. This file remains ignored by Git.
+- README.md
+  Added Sprint 5 architecture notes, configuration, and scope boundaries.
+
+Not added by design:
+- No gesture control.
+- No image saving.
+- No preprocessing.
+- No character recognition.
+- No model prediction.
+- No handedness changes.
+- No Git commit or push commands were run for this Sprint 5 request.
+
+Verification:
+- ruff format . passed.
+- ruff check . passed.
+- pytest passed with 62 tests.
+- mypy app passed.
+
+Manual follow-up:
+- Place a real MediaPipe model at models/hand_landmarker.task before running the camera demo.
+- Run python -m app.main to complete the physical webcam canvas test plan.

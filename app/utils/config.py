@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from dotenv import load_dotenv
 
@@ -27,6 +28,25 @@ def env_to_bool(name: str, default: bool) -> bool:
 
 def env_to_float(name: str, default: float) -> float:
     return float(os.getenv(name, str(default)))
+
+
+def env_to_color(name: str, default: tuple[int, int, int]) -> tuple[int, int, int]:
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    parts = [part.strip() for part in value.split(",")]
+    if len(parts) != 3:
+        raise ValueError(f"{name} must contain three comma-separated values")
+
+    color = cast(tuple[int, int, int], tuple(int(part) for part in parts))
+    validate_color(name, color)
+    return color
+
+
+def validate_color(name: str, color: tuple[int, int, int]) -> None:
+    if any(channel < 0 or channel > 255 for channel in color):
+        raise ValueError(f"{name} channels must be between 0 and 255, got {color}")
 
 
 def validate_confidence(name: str, value: float) -> None:
@@ -63,6 +83,16 @@ class Settings:
     draw_raw_finger_point: bool = env_to_bool("DRAW_RAW_FINGER_POINT", False)
     draw_smoothed_finger_point: bool = env_to_bool("DRAW_SMOOTHED_FINGER_POINT", True)
     finger_point_radius: int = int(os.getenv("FINGER_POINT_RADIUS", "8"))
+    canvas_background_color: tuple[int, int, int] = env_to_color(
+        "CANVAS_BACKGROUND_COLOR", (0, 0, 0)
+    )
+    canvas_stroke_color: tuple[int, int, int] = env_to_color("CANVAS_STROKE_COLOR", (255, 255, 255))
+    canvas_stroke_thickness: int = int(os.getenv("CANVAS_STROKE_THICKNESS", "8"))
+    canvas_max_point_distance: float = env_to_float("CANVAS_MAX_POINT_DISTANCE", 120.0)
+    canvas_overlay_opacity: float = env_to_float("CANVAS_OVERLAY_OPACITY", 1.0)
+    show_camera_with_canvas: bool = env_to_bool("SHOW_CAMERA_WITH_CANVAS", True)
+    show_canvas_window: bool = env_to_bool("SHOW_CANVAS_WINDOW", True)
+    canvas_clear_key: str = os.getenv("CANVAS_CLEAR_KEY", "c")
 
     model_path: Path = PROJECT_ROOT / os.getenv("MODEL_PATH", "models/character_cnn.pth")
     raw_data_dir: Path = PROJECT_ROOT / os.getenv("RAW_DATA_DIR", "data/raw")
@@ -97,6 +127,27 @@ class Settings:
             raise ValueError(
                 f"FINGER_POINT_RADIUS must be greater than 0, got {self.finger_point_radius}"
             )
+
+    def validate_canvas_config(self) -> None:
+        validate_color("CANVAS_BACKGROUND_COLOR", self.canvas_background_color)
+        validate_color("CANVAS_STROKE_COLOR", self.canvas_stroke_color)
+        if self.canvas_stroke_thickness <= 0:
+            raise ValueError(
+                "CANVAS_STROKE_THICKNESS must be greater than 0, "
+                f"got {self.canvas_stroke_thickness}"
+            )
+        if self.canvas_max_point_distance <= 0:
+            raise ValueError(
+                "CANVAS_MAX_POINT_DISTANCE must be greater than 0, "
+                f"got {self.canvas_max_point_distance}"
+            )
+        if not 0.0 <= self.canvas_overlay_opacity <= 1.0:
+            raise ValueError(
+                "CANVAS_OVERLAY_OPACITY must be between 0.0 and 1.0, "
+                f"got {self.canvas_overlay_opacity}"
+            )
+        if len(self.canvas_clear_key) != 1:
+            raise ValueError("CANVAS_CLEAR_KEY must contain exactly one character")
 
 
 settings = Settings()

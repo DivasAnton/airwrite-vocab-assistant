@@ -149,6 +149,38 @@ DRAW_SMOOTHED_FINGER_POINT=true
 FINGER_POINT_RADIUS=8
 ```
 
+## Sprint 5 Air Drawing Canvas
+
+Sprint 5 turns the smoothed index finger point into a persistent virtual drawing
+canvas.
+
+- `AirCanvas` owns the independent NumPy canvas, draws anti-aliased line
+  segments, clears content, and resets safely when frame size changes.
+- `StrokeManager` owns previous/current point logic, skips the first point,
+  resets when tracking is lost, and ignores unusually large jumps.
+- `CanvasOverlayRenderer` overlays the canvas onto the camera preview without
+  mutating the frame or canvas inputs.
+- `main.py` now creates the canvas from the actual frame size, draws line
+  segments from the smoothed finger point, shows an optional canvas window, and
+  clears both canvas and stroke state with the configured key.
+- Sprint 5 does not add gesture control, image saving, preprocessing, character
+  recognition, prediction, or handedness changes.
+
+Canvas configuration:
+
+```env
+CANVAS_BACKGROUND_COLOR=0,0,0
+CANVAS_STROKE_COLOR=255,255,255
+CANVAS_STROKE_THICKNESS=8
+CANVAS_MAX_POINT_DISTANCE=120
+CANVAS_OVERLAY_OPACITY=1.0
+SHOW_CAMERA_WITH_CANVAS=true
+SHOW_CANVAS_WINDOW=true
+CANVAS_CLEAR_KEY=c
+```
+
+Manual canvas testing is documented in `docs/sprint_5_air_canvas_test_plan.md`.
+
 Manual tracking testing is documented in `docs/sprint_4_finger_tracking_test_plan.md`.
 
 Luồng xử lý kỹ thuật:
