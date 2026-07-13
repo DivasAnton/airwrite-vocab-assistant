@@ -6,8 +6,10 @@ from app.camera.camera_stream import CameraStream
 from app.camera.frame_processor import FrameProcessor
 from app.utils.config import settings
 from app.utils.logger import get_logger
+from app.vision.finger_tracking_renderer import FingerTrackingRenderer
 from app.vision.hand_detector import HandDetector
 from app.vision.hand_landmark_renderer import HandLandmarkRenderer
+from app.vision.index_finger_tracker import IndexFingerTracker
 
 logger = get_logger(__name__)
 
@@ -30,6 +32,7 @@ def next_timestamp_ms(previous_timestamp_ms: int) -> int:
 def main() -> None:
     settings.create_directories()
     settings.validate_hand_detection_config()
+    settings.validate_finger_tracking_config()
 
     logger.info("%s starting", settings.app_name)
     logger.info("Environment: %s", settings.app_env)
@@ -48,6 +51,15 @@ def main() -> None:
         draw_landmarks=settings.draw_hand_landmarks,
         draw_connections=settings.draw_hand_connections,
         draw_handedness=settings.draw_handedness,
+    )
+    finger_tracker = IndexFingerTracker(
+        landmark_index=settings.index_finger_landmark_index,
+        smoothing_alpha=settings.finger_smoothing_alpha,
+    )
+    finger_renderer = FingerTrackingRenderer(
+        draw_raw_point=settings.draw_raw_finger_point,
+        draw_smoothed_point=settings.draw_smoothed_finger_point,
+        point_radius=settings.finger_point_radius,
     )
     previous_timestamp_ms = 0
 
@@ -73,11 +85,23 @@ def main() -> None:
             mirrored_frame = processor.mirror_frame(frame, settings.camera_mirror)
             previous_timestamp_ms = next_timestamp_ms(previous_timestamp_ms)
             hand_result = detector.detect(mirrored_frame, previous_timestamp_ms)
+            finger_result = finger_tracker.track(
+                hand_result,
+                frame_width=mirrored_frame.shape[1],
+                frame_height=mirrored_frame.shape[0],
+            )
             annotated_frame = renderer.draw(mirrored_frame, hand_result)
+            annotated_frame = finger_renderer.draw(annotated_frame, finger_result)
             fps = processor.calculate_fps()
             hand_label = (
                 hand_result.hands[0].handedness
                 if hand_result.has_hands and hand_result.hands[0].handedness
+                else "None"
+            )
+            finger_status = "TRACKED" if finger_result.is_tracked else "NOT DETECTED"
+            finger_point = (
+                f"{finger_result.smoothed_point[0]}, {finger_result.smoothed_point[1]}"
+                if finger_result.smoothed_point is not None
                 else "None"
             )
             display_frame = processor.draw_debug_info(
@@ -88,6 +112,8 @@ def main() -> None:
                     f"Hands: {len(hand_result.hands)}",
                     f"Hand: {hand_label}",
                     f"Detection: {'Active' if hand_result.has_hands else 'No hand detected'}",
+                    f"Finger: {finger_status}",
+                    f"Point: {finger_point}",
                 ],
             )
 
@@ -101,6 +127,7 @@ def main() -> None:
     finally:
         if detector is not None:
             detector.close()
+        finger_tracker.reset()
         camera.release()
         cv2.destroyAllWindows()
         logger.info("Camera and hand detector resources released")

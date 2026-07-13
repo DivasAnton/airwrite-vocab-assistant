@@ -58,6 +58,11 @@ class Settings:
     draw_hand_landmarks: bool = env_to_bool("DRAW_HAND_LANDMARKS", True)
     draw_hand_connections: bool = env_to_bool("DRAW_HAND_CONNECTIONS", True)
     draw_handedness: bool = env_to_bool("DRAW_HANDEDNESS", True)
+    index_finger_landmark_index: int = int(os.getenv("INDEX_FINGER_LANDMARK_INDEX", "8"))
+    finger_smoothing_alpha: float = env_to_float("FINGER_SMOOTHING_ALPHA", 0.5)
+    draw_raw_finger_point: bool = env_to_bool("DRAW_RAW_FINGER_POINT", False)
+    draw_smoothed_finger_point: bool = env_to_bool("DRAW_SMOOTHED_FINGER_POINT", True)
+    finger_point_radius: int = int(os.getenv("FINGER_POINT_RADIUS", "8"))
 
     model_path: Path = PROJECT_ROOT / os.getenv("MODEL_PATH", "models/character_cnn.pth")
     raw_data_dir: Path = PROJECT_ROOT / os.getenv("RAW_DATA_DIR", "data/raw")
@@ -76,6 +81,22 @@ class Settings:
         validate_confidence("HAND_MIN_DETECTION_CONFIDENCE", self.hand_min_detection_confidence)
         validate_confidence("HAND_MIN_PRESENCE_CONFIDENCE", self.hand_min_presence_confidence)
         validate_confidence("HAND_MIN_TRACKING_CONFIDENCE", self.hand_min_tracking_confidence)
+
+    def validate_finger_tracking_config(self) -> None:
+        if not 0 <= self.index_finger_landmark_index <= 20:
+            raise ValueError(
+                "INDEX_FINGER_LANDMARK_INDEX must be between 0 and 20, "
+                f"got {self.index_finger_landmark_index}"
+            )
+        if not 0.0 < self.finger_smoothing_alpha <= 1.0:
+            raise ValueError(
+                "FINGER_SMOOTHING_ALPHA must be greater than 0.0 and less than or equal "
+                f"to 1.0, got {self.finger_smoothing_alpha}"
+            )
+        if self.finger_point_radius <= 0:
+            raise ValueError(
+                f"FINGER_POINT_RADIUS must be greater than 0, got {self.finger_point_radius}"
+            )
 
 
 settings = Settings()

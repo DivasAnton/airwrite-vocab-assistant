@@ -122,6 +122,35 @@ Model setup:
 
 Manual camera testing is documented in `docs/sprint_3_hand_detection_test_plan.md`.
 
+## Sprint 4 Index Finger Tracking
+
+Sprint 4 extracts landmark 8 from the detected hand and turns it into a stable
+debug cursor.
+
+- `IndexFingerTracker` selects the first detected hand, reads landmark 8, converts
+  normalized coordinates to frame pixels, clamps the point to frame boundaries,
+  applies exponential smoothing, and resets when the hand is lost.
+- `FingerTrackingResult` keeps raw point, smoothed point, normalized point,
+  timestamp, hand index, and landmark index in one immutable result object.
+- `FingerTrackingRenderer` draws the raw and/or smoothed fingertip point for
+  debugging.
+- `main.py` only coordinates detector, hand renderer, finger tracker, finger
+  renderer, and debug overlay.
+- Sprint 4 does not change handedness labels, draw canvas lines, add gestures, or
+  save raw camera frames.
+
+Finger tracking configuration:
+
+```env
+INDEX_FINGER_LANDMARK_INDEX=8
+FINGER_SMOOTHING_ALPHA=0.5
+DRAW_RAW_FINGER_POINT=false
+DRAW_SMOOTHED_FINGER_POINT=true
+FINGER_POINT_RADIUS=8
+```
+
+Manual tracking testing is documented in `docs/sprint_4_finger_tracking_test_plan.md`.
+
 Luồng xử lý kỹ thuật:
 
 ```text

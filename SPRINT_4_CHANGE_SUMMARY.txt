@@ -1,0 +1,55 @@
+Sprint 4 - Index Finger Tracking
+
+Decision kept from Sprint 3:
+- Handedness is not changed.
+- Display labels are not swapped.
+- Coordinates are not inverted.
+- Canvas behavior is not changed.
+- Prediction behavior is not changed.
+- The existing mirror -> detect -> track pipeline is kept.
+
+Files added:
+- app/vision/finger_tracking_result.py
+  Added immutable FingerTrackingResult with raw point, smoothed point, normalized point, tracking status, timestamp, hand index, and landmark index.
+- app/vision/index_finger_tracker.py
+  Added IndexFingerTracker to select the first hand, read landmark 8, convert normalized coordinates to pixels, clamp frame boundaries, smooth movement, and reset when tracking is lost.
+- app/vision/finger_tracking_renderer.py
+  Added FingerTrackingRenderer to draw raw and/or smoothed fingertip debug points.
+- tests/test_index_finger_tracker.py
+  Added tests for normalized-to-pixel conversion, clamping, landmark index 8, smoothing, lost-hand reset, invalid frame dimensions, and missing landmarks.
+- tests/test_finger_tracking_renderer.py
+  Added renderer tests for untracked state, tracked point drawing, input immutability, disabled drawing options, boundary points, and invalid frames.
+- docs/sprint_4_finger_tracking_test_plan.md
+  Added manual webcam test plan for cursor tracking, jitter observation, alpha tuning, and edge behavior.
+
+Files changed:
+- app/main.py
+  Integrated IndexFingerTracker and FingerTrackingRenderer after hand detection and hand landmark rendering.
+  Added finger tracking debug lines for status and smoothed point.
+- app/utils/config.py
+  Added INDEX_FINGER_LANDMARK_INDEX, FINGER_SMOOTHING_ALPHA, DRAW_RAW_FINGER_POINT, DRAW_SMOOTHED_FINGER_POINT, and FINGER_POINT_RADIUS settings with validation.
+- .env.example
+  Added Sprint 4 finger tracking configuration.
+- .env
+  Updated local Sprint 4 finger tracking configuration. This file remains ignored by Git.
+- README.md
+  Added Sprint 4 architecture notes, configuration, and scope boundaries.
+
+Not added by design:
+- No canvas drawing.
+- No line drawing between points.
+- No gesture detection.
+- No handedness changes.
+- No world landmark usage.
+- No raw frame saving.
+- No Git commit or push commands were run for this Sprint 4 request.
+
+Verification:
+- ruff format . passed.
+- ruff check . passed.
+- pytest passed with 40 tests.
+- mypy app passed.
+
+Manual follow-up:
+- Place a real MediaPipe model at models/hand_landmarker.task before running the camera demo.
+- Run python -m app.main to complete the physical webcam tracking test plan.
