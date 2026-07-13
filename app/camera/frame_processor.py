@@ -42,6 +42,7 @@ class FrameProcessor:
         frame: NDArray[np.uint8],
         fps: float,
         show_fps: bool = True,
+        extra_lines: list[str] | None = None,
     ) -> NDArray[np.uint8]:
         output = frame.copy()
         height, width = output.shape[:2]
@@ -50,6 +51,8 @@ class FrameProcessor:
         if show_fps:
             lines.append(f"FPS: {fps:.1f}")
         lines.append(f"Resolution: {width}x{height}")
+        if extra_lines:
+            lines.extend(extra_lines)
         lines.append("Press Q or ESC to quit")
 
         y = 28

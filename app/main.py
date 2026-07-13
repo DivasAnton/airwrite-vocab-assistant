@@ -1,9 +1,13 @@
+from time import perf_counter
+
 import cv2
 
 from app.camera.camera_stream import CameraStream
 from app.camera.frame_processor import FrameProcessor
 from app.utils.config import settings
 from app.utils.logger import get_logger
+from app.vision.hand_detector import HandDetector
+from app.vision.hand_landmark_renderer import HandLandmarkRenderer
 
 logger = get_logger(__name__)
 
@@ -18,8 +22,14 @@ def should_quit(window_name: str, key: int) -> bool:
         return True
 
 
+def next_timestamp_ms(previous_timestamp_ms: int) -> int:
+    timestamp_ms = int(perf_counter() * 1000)
+    return max(timestamp_ms, previous_timestamp_ms + 1)
+
+
 def main() -> None:
     settings.create_directories()
+    settings.validate_hand_detection_config()
 
     logger.info("%s starting", settings.app_name)
     logger.info("Environment: %s", settings.app_env)
@@ -33,8 +43,23 @@ def main() -> None:
         logger=logger,
     )
     processor = FrameProcessor()
+    detector: HandDetector | None = None
+    renderer = HandLandmarkRenderer(
+        draw_landmarks=settings.draw_hand_landmarks,
+        draw_connections=settings.draw_hand_connections,
+        draw_handedness=settings.draw_handedness,
+    )
+    previous_timestamp_ms = 0
 
     try:
+        detector = HandDetector(
+            model_path=settings.hand_landmarker_model_path,
+            num_hands=settings.hand_num_hands,
+            min_detection_confidence=settings.hand_min_detection_confidence,
+            min_presence_confidence=settings.hand_min_presence_confidence,
+            min_tracking_confidence=settings.hand_min_tracking_confidence,
+            logger=logger,
+        )
         camera.open()
         cv2.namedWindow(settings.camera_window_name, cv2.WINDOW_NORMAL)
 
@@ -46,11 +71,24 @@ def main() -> None:
 
             assert frame is not None
             mirrored_frame = processor.mirror_frame(frame, settings.camera_mirror)
+            previous_timestamp_ms = next_timestamp_ms(previous_timestamp_ms)
+            hand_result = detector.detect(mirrored_frame, previous_timestamp_ms)
+            annotated_frame = renderer.draw(mirrored_frame, hand_result)
             fps = processor.calculate_fps()
+            hand_label = (
+                hand_result.hands[0].handedness
+                if hand_result.has_hands and hand_result.hands[0].handedness
+                else "None"
+            )
             display_frame = processor.draw_debug_info(
-                mirrored_frame,
+                annotated_frame,
                 fps=fps,
                 show_fps=settings.show_fps,
+                extra_lines=[
+                    f"Hands: {len(hand_result.hands)}",
+                    f"Hand: {hand_label}",
+                    f"Detection: {'Active' if hand_result.has_hands else 'No hand detected'}",
+                ],
             )
 
             cv2.imshow(settings.camera_window_name, display_frame)
@@ -58,12 +96,14 @@ def main() -> None:
             if should_quit(settings.camera_window_name, key):
                 logger.info("Camera loop stopped by user")
                 break
-    except RuntimeError as error:
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
         logger.error("%s", error)
     finally:
+        if detector is not None:
+            detector.close()
         camera.release()
         cv2.destroyAllWindows()
-        logger.info("Camera resources released")
+        logger.info("Camera and hand detector resources released")
 
 
 if __name__ == "__main__":

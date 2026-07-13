@@ -27,6 +27,9 @@ data/saved_drawings/*
 models/*
 !models/.gitkeep
 
+# Local MediaPipe model assets are documented but not committed by default.
+models/*.task
+
 # IDE
 .vscode/
 .idea/

@@ -25,6 +25,15 @@ def env_to_bool(name: str, default: bool) -> bool:
     )
 
 
+def env_to_float(name: str, default: float) -> float:
+    return float(os.getenv(name, str(default)))
+
+
+def validate_confidence(name: str, value: float) -> None:
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be between 0.0 and 1.0, got {value}")
+
+
 @dataclass
 class Settings:
     app_name: str = os.getenv("APP_NAME", "AirWrite Vocabulary Assistant")
@@ -39,6 +48,17 @@ class Settings:
     camera_window_name: str = os.getenv("CAMERA_WINDOW_NAME", "AirWrite Camera")
     show_fps: bool = env_to_bool("SHOW_FPS", True)
 
+    hand_landmarker_model_path: Path = PROJECT_ROOT / os.getenv(
+        "HAND_LANDMARKER_MODEL_PATH", "models/hand_landmarker.task"
+    )
+    hand_num_hands: int = int(os.getenv("HAND_NUM_HANDS", "1"))
+    hand_min_detection_confidence: float = env_to_float("HAND_MIN_DETECTION_CONFIDENCE", 0.5)
+    hand_min_presence_confidence: float = env_to_float("HAND_MIN_PRESENCE_CONFIDENCE", 0.5)
+    hand_min_tracking_confidence: float = env_to_float("HAND_MIN_TRACKING_CONFIDENCE", 0.5)
+    draw_hand_landmarks: bool = env_to_bool("DRAW_HAND_LANDMARKS", True)
+    draw_hand_connections: bool = env_to_bool("DRAW_HAND_CONNECTIONS", True)
+    draw_handedness: bool = env_to_bool("DRAW_HANDEDNESS", True)
+
     model_path: Path = PROJECT_ROOT / os.getenv("MODEL_PATH", "models/character_cnn.pth")
     raw_data_dir: Path = PROJECT_ROOT / os.getenv("RAW_DATA_DIR", "data/raw")
     processed_data_dir: Path = PROJECT_ROOT / os.getenv("PROCESSED_DATA_DIR", "data/processed")
@@ -48,6 +68,14 @@ class Settings:
         self.raw_data_dir.mkdir(parents=True, exist_ok=True)
         self.processed_data_dir.mkdir(parents=True, exist_ok=True)
         self.saved_drawings_dir.mkdir(parents=True, exist_ok=True)
+
+    def validate_hand_detection_config(self) -> None:
+        if self.hand_num_hands <= 0:
+            raise ValueError(f"HAND_NUM_HANDS must be greater than 0, got {self.hand_num_hands}")
+
+        validate_confidence("HAND_MIN_DETECTION_CONFIDENCE", self.hand_min_detection_confidence)
+        validate_confidence("HAND_MIN_PRESENCE_CONFIDENCE", self.hand_min_presence_confidence)
+        validate_confidence("HAND_MIN_TRACKING_CONFIDENCE", self.hand_min_tracking_confidence)
 
 
 settings = Settings()

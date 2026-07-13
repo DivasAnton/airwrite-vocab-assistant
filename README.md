@@ -85,6 +85,43 @@ mypy app
 
 Manual camera testing is documented in `docs/sprint_2_camera_test_plan.md`.
 
+## Sprint 3 Hand Detection
+
+Sprint 3 adds MediaPipe Hand Landmarker detection on top of the Sprint 2 webcam
+prototype.
+
+- `HandDetector` receives mirrored OpenCV BGR frames, converts them to RGB, runs
+  MediaPipe in VIDEO mode, and returns project-owned result objects.
+- `HandDetectionResult` keeps hand landmarks, world landmarks, handedness, and
+  timestamps out of `main.py`.
+- `HandLandmarkRenderer` draws landmarks, hand connections, and handedness for
+  debug display.
+- `main.py` now creates the detector once, keeps timestamps increasing, displays
+  hand count/status, and closes both camera and landmarker during cleanup.
+- Sprint 3 does not add finger tracking, gestures, canvas drawing, frame saving,
+  or camera upload.
+
+Hand detection configuration:
+
+```env
+HAND_LANDMARKER_MODEL_PATH=models/hand_landmarker.task
+HAND_NUM_HANDS=1
+HAND_MIN_DETECTION_CONFIDENCE=0.5
+HAND_MIN_PRESENCE_CONFIDENCE=0.5
+HAND_MIN_TRACKING_CONFIDENCE=0.5
+DRAW_HAND_LANDMARKS=true
+DRAW_HAND_CONNECTIONS=true
+DRAW_HANDEDNESS=true
+```
+
+Model setup:
+
+1. Download a compatible MediaPipe Hand Landmarker `.task` model.
+2. Place it at `models/hand_landmarker.task`.
+3. Keep the path relative to the project. Do not use an absolute local path.
+
+Manual camera testing is documented in `docs/sprint_3_hand_detection_test_plan.md`.
+
 Luồng xử lý kỹ thuật:
 
 ```text
