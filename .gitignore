@@ -26,3 +26,11 @@ data/saved_drawings/*
 
 models/*
 !models/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
