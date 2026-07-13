@@ -51,6 +51,39 @@ AirWrite cung cấp một luồng liền mạch:
 ```text
 Write → Recognize → Correct → Translate → Save → Review
 ```
+ 
+## Sprint 2 Webcam Prototype
+
+Sprint 2 adds the first OpenCV camera layer for AirWrite.
+
+- `CameraStream` opens the configured webcam, requests width, height, and FPS, reads valid frames, reports actual camera settings, and releases the camera safely.
+- `FrameProcessor` validates frames, mirrors the preview when enabled, calculates processing FPS, and draws prototype debug information.
+- `python -m app.main` starts the webcam prototype from the project root.
+- Quit controls: `Q`, `q`, `ESC`, or closing the OpenCV window.
+- Raw camera frames are not saved, recorded, or uploaded.
+
+Camera configuration is read from `.env` or `.env.example`:
+
+```env
+CAMERA_INDEX=0
+CAMERA_WIDTH=1280
+CAMERA_HEIGHT=720
+CAMERA_FPS=30
+CAMERA_MIRROR=true
+CAMERA_WINDOW_NAME=AirWrite Camera
+SHOW_FPS=true
+```
+
+Quality checks for this sprint:
+
+```powershell
+ruff format .
+ruff check .
+pytest
+mypy app
+```
+
+Manual camera testing is documented in `docs/sprint_2_camera_test_plan.md`.
 
 Luồng xử lý kỹ thuật:
 
