@@ -149,6 +149,53 @@ DRAW_SMOOTHED_FINGER_POINT=true
 FINGER_POINT_RADIUS=8
 ```
 
+## Sprint 7 - Save Drawing Image
+
+Sprint 7 adds local PNG saving for the AirCanvas image that lives in memory. The save flow is
+handled by `app/storage`, and the camera loop only asks the storage coordinator to save the clean
+canvas snapshot.
+
+### Added modules
+
+```text
+app/storage/
+├── __init__.py
+├── exceptions.py
+├── save_result.py
+├── drawing_image_saver.py
+└── drawing_save_coordinator.py
+```
+
+### Runtime behavior
+
+- Auto-save runs once when drawing state enters `DONE`.
+- Holding `DONE` does not create repeated image files.
+- Manual save uses the configured `MANUAL_SAVE_KEY`, default `S`.
+- Empty canvas saves are skipped with a structured `SKIPPED_EMPTY` result.
+- Save failures are returned as `FAILED` results and do not crash the camera loop.
+- Saved files are written to `data/drawings/` as `.png` images by default.
+- The saved image is the raw AirCanvas snapshot only, not the camera preview or debug overlay.
+
+### Configuration
+
+```env
+DRAWING_OUTPUT_DIR=data/drawings
+DRAWING_IMAGE_FORMAT=png
+DRAWING_FILENAME_PREFIX=drawing
+AUTO_SAVE_ON_DONE=true
+ENABLE_MANUAL_SAVE=true
+MANUAL_SAVE_KEY=s
+CLEAR_CANVAS_AFTER_SAVE=false
+SHOW_SAVE_STATUS=true
+SAVE_STATUS_DISPLAY_MS=2000
+```
+
+### Tests
+
+- `tests/test_drawing_image_saver.py`
+- `tests/test_drawing_save_coordinator.py`
+- `docs/sprint_7_save_drawing_test_plan.md`
+
 ## Sprint 5 Air Drawing Canvas
 
 Sprint 5 turns the smoothed index finger point into a persistent virtual drawing

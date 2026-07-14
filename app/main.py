@@ -10,6 +10,9 @@ from app.drawing.drawing_controller import DrawingController
 from app.drawing.drawing_state import DrawingState
 from app.drawing.drawing_state_machine import DrawingStateMachine
 from app.drawing.stroke_manager import StrokeManager
+from app.storage.drawing_image_saver import DrawingImageSaver
+from app.storage.drawing_save_coordinator import DrawingSaveCoordinator
+from app.storage.save_result import SaveResult, SaveStatus
 from app.utils.config import settings
 from app.utils.logger import get_logger
 from app.vision.finger_tracking_renderer import FingerTrackingRenderer
@@ -46,6 +49,10 @@ def is_done_key(key: int) -> bool:
     return key in {ord("d"), ord("D")}
 
 
+def is_manual_save_key(key: int, manual_save_key: str) -> bool:
+    return key in {ord(manual_save_key.lower()), ord(manual_save_key.upper())}
+
+
 def is_space_key(key: int) -> bool:
     return key == ord(" ")
 
@@ -60,12 +67,30 @@ def create_air_canvas(width: int, height: int) -> AirCanvas:
     )
 
 
+def format_save_status(result: SaveResult) -> str:
+    if result.status == SaveStatus.SAVED and result.file_path is not None:
+        return f"Saved: {result.file_path.name}"
+    return f"Save: {result.status.value}"
+
+
+def log_save_result(result: SaveResult) -> None:
+    if result.status == SaveStatus.SAVED:
+        logger.info("%s", result.message)
+    elif result.status == SaveStatus.SKIPPED_EMPTY:
+        logger.info("%s", result.message)
+    elif result.status == SaveStatus.DISABLED:
+        logger.debug("%s", result.message)
+    else:
+        logger.error("%s", result.message)
+
+
 def main() -> None:
     settings.create_directories()
     settings.validate_hand_detection_config()
     settings.validate_finger_tracking_config()
     settings.validate_canvas_config()
     settings.validate_gesture_config()
+    settings.validate_storage_config()
 
     logger.info("%s starting", settings.app_name)
     logger.info("Environment: %s", settings.app_env)
@@ -105,8 +130,20 @@ def main() -> None:
         background_color=settings.canvas_background_color,
         opacity=settings.canvas_overlay_opacity,
     )
+    image_saver = DrawingImageSaver(
+        output_dir=settings.drawing_output_dir,
+        image_format=settings.drawing_image_format,
+        filename_prefix=settings.drawing_filename_prefix,
+    )
+    save_coordinator = DrawingSaveCoordinator(
+        saver=image_saver,
+        auto_save_on_done=settings.auto_save_on_done,
+        enable_manual_save=settings.enable_manual_save,
+    )
     air_canvas: AirCanvas | None = None
     drawing_controller: DrawingController | None = None
+    last_save_result: SaveResult | None = None
+    save_status_expires_at_ms = 0
     previous_timestamp_ms = 0
 
     try:
@@ -156,6 +193,13 @@ def main() -> None:
             )
             assert drawing_controller is not None
             controller_result = drawing_controller.update(stable_gesture, finger_result)
+            save_result = save_coordinator.handle_state(controller_result.state, air_canvas)
+            if save_result is not None:
+                last_save_result = save_result
+                save_status_expires_at_ms = previous_timestamp_ms + settings.save_status_display_ms
+                log_save_result(save_result)
+                if save_result.success and settings.clear_canvas_after_save:
+                    drawing_controller.clear(previous_timestamp_ms)
 
             annotated_frame = renderer.draw(mirrored_frame, hand_result)
             annotated_frame = finger_renderer.draw(annotated_frame, finger_result)
@@ -175,6 +219,13 @@ def main() -> None:
                 if finger_result.smoothed_point is not None
                 else "None"
             )
+            save_status_lines = (
+                [format_save_status(last_save_result)]
+                if settings.show_save_status
+                and last_save_result is not None
+                and previous_timestamp_ms <= save_status_expires_at_ms
+                else []
+            )
             display_frame = processor.draw_debug_info(
                 annotated_frame,
                 fps=fps,
@@ -187,6 +238,8 @@ def main() -> None:
                     f"Point: {finger_point}",
                     f"Canvas: {'Empty' if air_canvas.is_empty() else 'Drawing'}",
                     f"Clear: {settings.canvas_clear_key.upper()}",
+                    f"Save: {settings.manual_save_key.upper()}",
+                    *save_status_lines,
                     *(
                         [
                             f"Raw Gesture: {raw_gesture.value}",
@@ -232,8 +285,33 @@ def main() -> None:
                 and drawing_controller is not None
                 and is_done_key(key)
             ):
-                drawing_controller.set_state(DrawingState.DONE, previous_timestamp_ms)
+                controller_result = drawing_controller.set_state(
+                    DrawingState.DONE,
+                    previous_timestamp_ms,
+                )
+                save_result = save_coordinator.handle_state(controller_result.state, air_canvas)
+                if save_result is not None:
+                    last_save_result = save_result
+                    save_status_expires_at_ms = (
+                        previous_timestamp_ms + settings.save_status_display_ms
+                    )
+                    log_save_result(save_result)
+                    if save_result.success and settings.clear_canvas_after_save:
+                        drawing_controller.clear(previous_timestamp_ms)
                 logger.info("Keyboard fallback changed state to DONE")
+                continue
+            if (
+                settings.enable_keyboard_fallback
+                and settings.enable_manual_save
+                and drawing_controller is not None
+                and is_manual_save_key(key, settings.manual_save_key)
+            ):
+                save_result = save_coordinator.save_now(air_canvas)
+                last_save_result = save_result
+                save_status_expires_at_ms = previous_timestamp_ms + settings.save_status_display_ms
+                log_save_result(save_result)
+                if save_result.success and settings.clear_canvas_after_save:
+                    drawing_controller.clear(previous_timestamp_ms)
                 continue
             if (
                 drawing_controller is not None

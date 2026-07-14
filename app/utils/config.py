@@ -103,6 +103,15 @@ class Settings:
     clear_hold_ms: int = int(os.getenv("CLEAR_HOLD_MS", "1500"))
     enable_clear_gesture: bool = env_to_bool("ENABLE_CLEAR_GESTURE", False)
     finger_extension_margin: float = env_to_float("FINGER_EXTENSION_MARGIN", 0.02)
+    drawing_output_dir: Path = PROJECT_ROOT / os.getenv("DRAWING_OUTPUT_DIR", "data/drawings")
+    drawing_image_format: str = os.getenv("DRAWING_IMAGE_FORMAT", "png")
+    drawing_filename_prefix: str = os.getenv("DRAWING_FILENAME_PREFIX", "drawing")
+    auto_save_on_done: bool = env_to_bool("AUTO_SAVE_ON_DONE", True)
+    enable_manual_save: bool = env_to_bool("ENABLE_MANUAL_SAVE", True)
+    manual_save_key: str = os.getenv("MANUAL_SAVE_KEY", "s")
+    clear_canvas_after_save: bool = env_to_bool("CLEAR_CANVAS_AFTER_SAVE", False)
+    show_save_status: bool = env_to_bool("SHOW_SAVE_STATUS", True)
+    save_status_display_ms: int = int(os.getenv("SAVE_STATUS_DISPLAY_MS", "2000"))
 
     model_path: Path = PROJECT_ROOT / os.getenv("MODEL_PATH", "models/character_cnn.pth")
     raw_data_dir: Path = PROJECT_ROOT / os.getenv("RAW_DATA_DIR", "data/raw")
@@ -180,6 +189,21 @@ class Settings:
             raise ValueError(
                 "FINGER_EXTENSION_MARGIN must be greater than or equal to 0.0 "
                 f"and less than 1.0, got {self.finger_extension_margin}"
+            )
+
+    def validate_storage_config(self) -> None:
+        if not str(self.drawing_output_dir).strip():
+            raise ValueError("DRAWING_OUTPUT_DIR must not be empty")
+        if self.drawing_image_format.lower().strip().lstrip(".") != "png":
+            raise ValueError(f"DRAWING_IMAGE_FORMAT must be png, got {self.drawing_image_format!r}")
+        if not self.drawing_filename_prefix.strip():
+            raise ValueError("DRAWING_FILENAME_PREFIX must not be empty")
+        if len(self.manual_save_key) != 1:
+            raise ValueError("MANUAL_SAVE_KEY must contain exactly one character")
+        if self.save_status_display_ms < 0:
+            raise ValueError(
+                "SAVE_STATUS_DISPLAY_MS must be greater than or equal to 0, "
+                f"got {self.save_status_display_ms}"
             )
 
 
