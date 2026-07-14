@@ -20,11 +20,13 @@ data/raw/*
 data/processed/*
 data/saved_drawings/*
 data/drawings/*
+data/preprocessed_debug/*
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/saved_drawings/.gitkeep
 !data/drawings/.gitkeep
+!data/preprocessed_debug/.gitkeep
 
 models/*
 !models/.gitkeep

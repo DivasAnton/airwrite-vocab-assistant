@@ -1,6 +1,9 @@
 from time import perf_counter
+from typing import cast
 
 import cv2
+import numpy as np
+from numpy.typing import NDArray
 
 from app.camera.camera_stream import CameraStream
 from app.camera.frame_processor import FrameProcessor
@@ -10,6 +13,12 @@ from app.drawing.drawing_controller import DrawingController
 from app.drawing.drawing_state import DrawingState
 from app.drawing.drawing_state_machine import DrawingStateMachine
 from app.drawing.stroke_manager import StrokeManager
+from app.preprocessing.aspect_ratio_resizer import AspectRatioResizer
+from app.preprocessing.bounding_box_extractor import BoundingBoxExtractor
+from app.preprocessing.debug_image_exporter import DebugImageExporter
+from app.preprocessing.exceptions import EmptyDrawingError, PreprocessingError
+from app.preprocessing.foreground_normalizer import ForegroundNormalizer
+from app.preprocessing.handwriting_preprocessor import HandwritingPreprocessor
 from app.storage.drawing_image_saver import DrawingImageSaver
 from app.storage.drawing_save_coordinator import DrawingSaveCoordinator
 from app.storage.save_result import SaveResult, SaveStatus
@@ -53,6 +62,10 @@ def is_manual_save_key(key: int, manual_save_key: str) -> bool:
     return key in {ord(manual_save_key.lower()), ord(manual_save_key.upper())}
 
 
+def is_manual_preprocess_key(key: int, manual_preprocess_key: str) -> bool:
+    return key in {ord(manual_preprocess_key.lower()), ord(manual_preprocess_key.upper())}
+
+
 def is_space_key(key: int) -> bool:
     return key == ord(" ")
 
@@ -84,6 +97,43 @@ def log_save_result(result: SaveResult) -> None:
         logger.error("%s", result.message)
 
 
+def make_preprocessed_preview(processed_image: NDArray[np.uint8]) -> NDArray[np.uint8]:
+    return cast(
+        NDArray[np.uint8],
+        cv2.resize(
+            processed_image,
+            (280, 280),
+            interpolation=cv2.INTER_NEAREST,
+        ),
+    )
+
+
+def preprocess_canvas_snapshot(
+    air_canvas: AirCanvas,
+    preprocessor: HandwritingPreprocessor,
+    debug_exporter: DebugImageExporter | None,
+) -> str:
+    try:
+        result = preprocessor.process(air_canvas.get_image(copy=True))
+    except EmptyDrawingError:
+        logger.info("Nothing to preprocess")
+        return "Preprocess: EMPTY"
+    except PreprocessingError as error:
+        logger.error("Preprocessing failed: %s", error)
+        return "Preprocess: FAILED"
+
+    cv2.imshow("AirWrite Preprocessed", make_preprocessed_preview(result.processed_image))
+    if debug_exporter is not None and result.debug_images:
+        exported_paths = debug_exporter.export(result.debug_images)
+        logger.info("Exported %s preprocessing debug images", len(exported_paths))
+    logger.info(
+        "Preprocessed drawing to %sx%s",
+        result.processed_image.shape[1],
+        result.processed_image.shape[0],
+    )
+    return "Preprocess: READY"
+
+
 def main() -> None:
     settings.create_directories()
     settings.validate_hand_detection_config()
@@ -91,6 +141,7 @@ def main() -> None:
     settings.validate_canvas_config()
     settings.validate_gesture_config()
     settings.validate_storage_config()
+    settings.validate_preprocessing_config()
 
     logger.info("%s starting", settings.app_name)
     logger.info("Environment: %s", settings.app_env)
@@ -140,10 +191,35 @@ def main() -> None:
         auto_save_on_done=settings.auto_save_on_done,
         enable_manual_save=settings.enable_manual_save,
     )
+    preprocessor = HandwritingPreprocessor(
+        normalizer=ForegroundNormalizer(
+            binary_threshold=settings.preprocess_binary_threshold,
+            invert_input=settings.preprocess_invert_input,
+        ),
+        extractor=BoundingBoxExtractor(
+            crop_padding=settings.preprocess_crop_padding,
+            min_foreground_pixels=settings.preprocess_min_foreground_pixels,
+        ),
+        resizer=AspectRatioResizer(
+            output_width=settings.preprocess_output_width,
+            output_height=settings.preprocess_output_height,
+            content_width=settings.preprocess_content_width,
+            content_height=settings.preprocess_content_height,
+            center_of_mass=settings.preprocess_center_of_mass,
+        ),
+        include_debug_images=settings.save_preprocess_debug_images,
+    )
+    debug_exporter = (
+        DebugImageExporter(settings.preprocess_debug_output_dir)
+        if settings.save_preprocess_debug_images
+        else None
+    )
     air_canvas: AirCanvas | None = None
     drawing_controller: DrawingController | None = None
     last_save_result: SaveResult | None = None
+    last_preprocess_status: str | None = None
     save_status_expires_at_ms = 0
+    preprocess_status_expires_at_ms = 0
     previous_timestamp_ms = 0
 
     try:
@@ -198,8 +274,17 @@ def main() -> None:
                 last_save_result = save_result
                 save_status_expires_at_ms = previous_timestamp_ms + settings.save_status_display_ms
                 log_save_result(save_result)
-                if save_result.success and settings.clear_canvas_after_save:
-                    drawing_controller.clear(previous_timestamp_ms)
+                if save_result.success:
+                    last_preprocess_status = preprocess_canvas_snapshot(
+                        air_canvas,
+                        preprocessor,
+                        debug_exporter,
+                    )
+                    preprocess_status_expires_at_ms = (
+                        previous_timestamp_ms + settings.save_status_display_ms
+                    )
+                    if settings.clear_canvas_after_save:
+                        drawing_controller.clear(previous_timestamp_ms)
 
             annotated_frame = renderer.draw(mirrored_frame, hand_result)
             annotated_frame = finger_renderer.draw(annotated_frame, finger_result)
@@ -226,6 +311,13 @@ def main() -> None:
                 and previous_timestamp_ms <= save_status_expires_at_ms
                 else []
             )
+            preprocess_status_lines = (
+                [last_preprocess_status]
+                if settings.show_save_status
+                and last_preprocess_status is not None
+                and previous_timestamp_ms <= preprocess_status_expires_at_ms
+                else []
+            )
             display_frame = processor.draw_debug_info(
                 annotated_frame,
                 fps=fps,
@@ -239,7 +331,9 @@ def main() -> None:
                     f"Canvas: {'Empty' if air_canvas.is_empty() else 'Drawing'}",
                     f"Clear: {settings.canvas_clear_key.upper()}",
                     f"Save: {settings.manual_save_key.upper()}",
+                    f"Preprocess: {settings.manual_preprocess_key.upper()}",
                     *save_status_lines,
+                    *preprocess_status_lines,
                     *(
                         [
                             f"Raw Gesture: {raw_gesture.value}",
@@ -296,8 +390,17 @@ def main() -> None:
                         previous_timestamp_ms + settings.save_status_display_ms
                     )
                     log_save_result(save_result)
-                    if save_result.success and settings.clear_canvas_after_save:
-                        drawing_controller.clear(previous_timestamp_ms)
+                    if save_result.success:
+                        last_preprocess_status = preprocess_canvas_snapshot(
+                            air_canvas,
+                            preprocessor,
+                            debug_exporter,
+                        )
+                        preprocess_status_expires_at_ms = (
+                            previous_timestamp_ms + settings.save_status_display_ms
+                        )
+                        if settings.clear_canvas_after_save:
+                            drawing_controller.clear(previous_timestamp_ms)
                 logger.info("Keyboard fallback changed state to DONE")
                 continue
             if (
@@ -310,8 +413,31 @@ def main() -> None:
                 last_save_result = save_result
                 save_status_expires_at_ms = previous_timestamp_ms + settings.save_status_display_ms
                 log_save_result(save_result)
-                if save_result.success and settings.clear_canvas_after_save:
-                    drawing_controller.clear(previous_timestamp_ms)
+                if save_result.success:
+                    last_preprocess_status = preprocess_canvas_snapshot(
+                        air_canvas,
+                        preprocessor,
+                        debug_exporter,
+                    )
+                    preprocess_status_expires_at_ms = (
+                        previous_timestamp_ms + settings.save_status_display_ms
+                    )
+                    if settings.clear_canvas_after_save:
+                        drawing_controller.clear(previous_timestamp_ms)
+                continue
+            if (
+                settings.enable_keyboard_fallback
+                and drawing_controller is not None
+                and is_manual_preprocess_key(key, settings.manual_preprocess_key)
+            ):
+                last_preprocess_status = preprocess_canvas_snapshot(
+                    air_canvas,
+                    preprocessor,
+                    debug_exporter,
+                )
+                preprocess_status_expires_at_ms = (
+                    previous_timestamp_ms + settings.save_status_display_ms
+                )
                 continue
             if (
                 drawing_controller is not None

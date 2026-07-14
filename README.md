@@ -1,5 +1,51 @@
 # AirWrite Vocabulary Assistant
 
+## Sprint 8 - Handwriting Image Preprocessing
+
+Sprint 8 adds a model-ready preprocessing pipeline for AirCanvas drawing images. The pipeline takes
+a clean canvas snapshot or saved PNG and returns a centered grayscale output for future recognition.
+
+### Output contract
+
+- Input: `uint8` NumPy grayscale, BGR, or BGRA image.
+- Foreground convention: black background, bright/white strokes.
+- Processed output: `28x28`, grayscale, `uint8`.
+- Normalized output: `28x28`, `float32`, range `0.0-1.0`.
+- No channel dimension or batch dimension is added in the core preprocessor.
+
+### Added modules
+
+```text
+app/preprocessing/
+├── exceptions.py
+├── bounding_box.py
+├── preprocessing_result.py
+├── image_validator.py
+├── foreground_normalizer.py
+├── bounding_box_extractor.py
+├── aspect_ratio_resizer.py
+├── handwriting_preprocessor.py
+└── debug_image_exporter.py
+```
+
+### Runtime behavior
+
+- Preprocessing runs after a successful save event.
+- Manual preprocessing uses `MANUAL_PREPROCESS_KEY`, default `P`.
+- The `28x28` output is previewed in `AirWrite Preprocessed` at `280x280` for visual debugging.
+- Debug images are written only when `SAVE_PREPROCESS_DEBUG_IMAGES=true`.
+- The runtime does not preprocess every camera frame.
+- Sprint 8 does not train a model or run prediction.
+
+### Tests
+
+- `tests/test_image_validator.py`
+- `tests/test_foreground_normalizer.py`
+- `tests/test_bounding_box_extractor.py`
+- `tests/test_aspect_ratio_resizer.py`
+- `tests/test_handwriting_preprocessor.py`
+- `docs/sprint_8_preprocessing_test_plan.md`
+
 > AI-powered vocabulary assistant using air-writing interaction.
 
 ## 1. Tổng quan

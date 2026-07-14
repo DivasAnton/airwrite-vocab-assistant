@@ -112,6 +112,20 @@ class Settings:
     clear_canvas_after_save: bool = env_to_bool("CLEAR_CANVAS_AFTER_SAVE", False)
     show_save_status: bool = env_to_bool("SHOW_SAVE_STATUS", True)
     save_status_display_ms: int = int(os.getenv("SAVE_STATUS_DISPLAY_MS", "2000"))
+    preprocess_output_width: int = int(os.getenv("PREPROCESS_OUTPUT_WIDTH", "28"))
+    preprocess_output_height: int = int(os.getenv("PREPROCESS_OUTPUT_HEIGHT", "28"))
+    preprocess_content_width: int = int(os.getenv("PREPROCESS_CONTENT_WIDTH", "20"))
+    preprocess_content_height: int = int(os.getenv("PREPROCESS_CONTENT_HEIGHT", "20"))
+    preprocess_binary_threshold: int = int(os.getenv("PREPROCESS_BINARY_THRESHOLD", "20"))
+    preprocess_crop_padding: int = int(os.getenv("PREPROCESS_CROP_PADDING", "8"))
+    preprocess_min_foreground_pixels: int = int(os.getenv("PREPROCESS_MIN_FOREGROUND_PIXELS", "10"))
+    preprocess_invert_input: bool = env_to_bool("PREPROCESS_INVERT_INPUT", False)
+    preprocess_center_of_mass: bool = env_to_bool("PREPROCESS_CENTER_OF_MASS", False)
+    save_preprocess_debug_images: bool = env_to_bool("SAVE_PREPROCESS_DEBUG_IMAGES", False)
+    preprocess_debug_output_dir: Path = PROJECT_ROOT / os.getenv(
+        "PREPROCESS_DEBUG_OUTPUT_DIR", "data/preprocessed_debug"
+    )
+    manual_preprocess_key: str = os.getenv("MANUAL_PREPROCESS_KEY", "p")
 
     model_path: Path = PROJECT_ROOT / os.getenv("MODEL_PATH", "models/character_cnn.pth")
     raw_data_dir: Path = PROJECT_ROOT / os.getenv("RAW_DATA_DIR", "data/raw")
@@ -122,6 +136,8 @@ class Settings:
         self.raw_data_dir.mkdir(parents=True, exist_ok=True)
         self.processed_data_dir.mkdir(parents=True, exist_ok=True)
         self.saved_drawings_dir.mkdir(parents=True, exist_ok=True)
+        if self.save_preprocess_debug_images:
+            self.preprocess_debug_output_dir.mkdir(parents=True, exist_ok=True)
 
     def validate_hand_detection_config(self) -> None:
         if self.hand_num_hands <= 0:
@@ -205,6 +221,35 @@ class Settings:
                 "SAVE_STATUS_DISPLAY_MS must be greater than or equal to 0, "
                 f"got {self.save_status_display_ms}"
             )
+
+    def validate_preprocessing_config(self) -> None:
+        if self.preprocess_output_width <= 0 or self.preprocess_output_height <= 0:
+            raise ValueError(
+                "PREPROCESS_OUTPUT_WIDTH and PREPROCESS_OUTPUT_HEIGHT must be greater than 0"
+            )
+        if self.preprocess_content_width <= 0 or self.preprocess_content_height <= 0:
+            raise ValueError(
+                "PREPROCESS_CONTENT_WIDTH and PREPROCESS_CONTENT_HEIGHT must be greater than 0"
+            )
+        if self.preprocess_content_width > self.preprocess_output_width:
+            raise ValueError("PREPROCESS_CONTENT_WIDTH must be less than or equal to output width")
+        if self.preprocess_content_height > self.preprocess_output_height:
+            raise ValueError(
+                "PREPROCESS_CONTENT_HEIGHT must be less than or equal to output height"
+            )
+        if not 0 <= self.preprocess_binary_threshold <= 255:
+            raise ValueError("PREPROCESS_BINARY_THRESHOLD must be between 0 and 255")
+        if self.preprocess_crop_padding < 0:
+            raise ValueError("PREPROCESS_CROP_PADDING must be greater than or equal to 0")
+        if self.preprocess_min_foreground_pixels <= 0:
+            raise ValueError("PREPROCESS_MIN_FOREGROUND_PIXELS must be greater than 0")
+        if len(self.manual_preprocess_key) != 1:
+            raise ValueError("MANUAL_PREPROCESS_KEY must contain exactly one character")
+        if self.manual_preprocess_key.lower() in {
+            self.manual_save_key.lower(),
+            self.canvas_clear_key.lower(),
+        }:
+            raise ValueError("MANUAL_PREPROCESS_KEY must not conflict with save or clear keys")
 
 
 settings = Settings()
