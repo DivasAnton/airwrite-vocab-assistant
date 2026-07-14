@@ -93,6 +93,16 @@ class Settings:
     show_camera_with_canvas: bool = env_to_bool("SHOW_CAMERA_WITH_CANVAS", True)
     show_canvas_window: bool = env_to_bool("SHOW_CANVAS_WINDOW", True)
     canvas_clear_key: str = os.getenv("CANVAS_CLEAR_KEY", "c")
+    gesture_stable_frames: int = int(os.getenv("GESTURE_STABLE_FRAMES", "5"))
+    gesture_cooldown_ms: int = int(os.getenv("GESTURE_COOLDOWN_MS", "500"))
+    gesture_lost_hand_frames: int = int(os.getenv("GESTURE_LOST_HAND_FRAMES", "10"))
+    enable_gesture_control: bool = env_to_bool("ENABLE_GESTURE_CONTROL", True)
+    enable_keyboard_fallback: bool = env_to_bool("ENABLE_KEYBOARD_FALLBACK", True)
+    draw_gesture_label: bool = env_to_bool("DRAW_GESTURE_LABEL", True)
+    draw_state_label: bool = env_to_bool("DRAW_STATE_LABEL", True)
+    clear_hold_ms: int = int(os.getenv("CLEAR_HOLD_MS", "1500"))
+    enable_clear_gesture: bool = env_to_bool("ENABLE_CLEAR_GESTURE", False)
+    finger_extension_margin: float = env_to_float("FINGER_EXTENSION_MARGIN", 0.02)
 
     model_path: Path = PROJECT_ROOT / os.getenv("MODEL_PATH", "models/character_cnn.pth")
     raw_data_dir: Path = PROJECT_ROOT / os.getenv("RAW_DATA_DIR", "data/raw")
@@ -148,6 +158,29 @@ class Settings:
             )
         if len(self.canvas_clear_key) != 1:
             raise ValueError("CANVAS_CLEAR_KEY must contain exactly one character")
+
+    def validate_gesture_config(self) -> None:
+        if self.gesture_stable_frames <= 0:
+            raise ValueError(
+                f"GESTURE_STABLE_FRAMES must be greater than 0, got {self.gesture_stable_frames}"
+            )
+        if self.gesture_cooldown_ms < 0:
+            raise ValueError(
+                "GESTURE_COOLDOWN_MS must be greater than or equal to 0, "
+                f"got {self.gesture_cooldown_ms}"
+            )
+        if self.gesture_lost_hand_frames <= 0:
+            raise ValueError(
+                "GESTURE_LOST_HAND_FRAMES must be greater than 0, "
+                f"got {self.gesture_lost_hand_frames}"
+            )
+        if self.clear_hold_ms <= 0:
+            raise ValueError(f"CLEAR_HOLD_MS must be greater than 0, got {self.clear_hold_ms}")
+        if not 0.0 <= self.finger_extension_margin < 1.0:
+            raise ValueError(
+                "FINGER_EXTENSION_MARGIN must be greater than or equal to 0.0 "
+                f"and less than 1.0, got {self.finger_extension_margin}"
+            )
 
 
 settings = Settings()

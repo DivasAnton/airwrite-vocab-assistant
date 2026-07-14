@@ -181,6 +181,41 @@ CANVAS_CLEAR_KEY=c
 
 Manual canvas testing is documented in `docs/sprint_5_air_canvas_test_plan.md`.
 
+## Sprint 6 Gesture Control And Drawing State
+
+Sprint 6 separates hand shape detection from drawing state.
+
+- `GestureDetector` classifies `INDEX_ONLY`, `OPEN_PALM`, `FIST`, `UNKNOWN`, and
+  `NO_HAND` from hand landmarks without using handedness or thumb logic.
+- `GestureStabilizer` accepts a gesture only after enough stable frames, reducing
+  flicker from noisy landmarks.
+- `DrawingStateMachine` owns transitions between `IDLE`, `READY`, `WRITING`,
+  `PAUSED`, `DONE`, and `CLEAR`.
+- `DrawingController` draws only in `WRITING`, resets strokes when leaving or
+  entering writing, clears safely, and keeps canvas/stroke actions outside
+  `main.py`.
+- Keyboard fallback remains available: `Space` toggles writing/pause, `C` clears,
+  and `D` marks done.
+- Sprint 6 does not save images, run OCR, preprocess canvas data, translate text,
+  or change handedness.
+
+Gesture configuration:
+
+```env
+GESTURE_STABLE_FRAMES=5
+GESTURE_COOLDOWN_MS=500
+GESTURE_LOST_HAND_FRAMES=10
+ENABLE_GESTURE_CONTROL=true
+ENABLE_KEYBOARD_FALLBACK=true
+DRAW_GESTURE_LABEL=true
+DRAW_STATE_LABEL=true
+CLEAR_HOLD_MS=1500
+ENABLE_CLEAR_GESTURE=false
+FINGER_EXTENSION_MARGIN=0.02
+```
+
+Manual gesture testing is documented in `docs/sprint_6_gesture_control_test_plan.md`.
+
 Manual tracking testing is documented in `docs/sprint_4_finger_tracking_test_plan.md`.
 
 Luồng xử lý kỹ thuật:
