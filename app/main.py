@@ -19,8 +19,11 @@ from app.preprocessing.debug_image_exporter import DebugImageExporter
 from app.preprocessing.exceptions import EmptyDrawingError, PreprocessingError
 from app.preprocessing.foreground_normalizer import ForegroundNormalizer
 from app.preprocessing.handwriting_preprocessor import HandwritingPreprocessor
+from app.preprocessing.preprocessing_result import PreprocessingResult
+from app.storage.character_dataset_saver import CharacterDatasetImageSaver
 from app.storage.drawing_image_saver import DrawingImageSaver
 from app.storage.drawing_save_coordinator import DrawingSaveCoordinator
+from app.storage.exceptions import DrawingStorageError
 from app.storage.save_result import SaveResult, SaveStatus
 from app.utils.config import settings
 from app.utils.logger import get_logger
@@ -64,6 +67,18 @@ def is_manual_save_key(key: int, manual_save_key: str) -> bool:
 
 def is_manual_preprocess_key(key: int, manual_preprocess_key: str) -> bool:
     return key in {ord(manual_preprocess_key.lower()), ord(manual_preprocess_key.upper())}
+
+
+def is_dataset_capture_key(key: int, capture_key: str) -> bool:
+    return key in {ord(capture_key.lower()), ord(capture_key.upper())}
+
+
+def is_dataset_label_next_key(key: int, next_key: str) -> bool:
+    return key == ord(next_key)
+
+
+def is_dataset_label_previous_key(key: int, previous_key: str) -> bool:
+    return key == ord(previous_key)
 
 
 def is_space_key(key: int) -> bool:
@@ -112,15 +127,15 @@ def preprocess_canvas_snapshot(
     air_canvas: AirCanvas,
     preprocessor: HandwritingPreprocessor,
     debug_exporter: DebugImageExporter | None,
-) -> str:
+) -> tuple[str, PreprocessingResult | None]:
     try:
         result = preprocessor.process(air_canvas.get_image(copy=True))
     except EmptyDrawingError:
         logger.info("Nothing to preprocess")
-        return "Preprocess: EMPTY"
+        return "Preprocess: EMPTY", None
     except PreprocessingError as error:
         logger.error("Preprocessing failed: %s", error)
-        return "Preprocess: FAILED"
+        return "Preprocess: FAILED", None
 
     cv2.imshow("AirWrite Preprocessed", make_preprocessed_preview(result.processed_image))
     if debug_exporter is not None and result.debug_images:
@@ -131,7 +146,7 @@ def preprocess_canvas_snapshot(
         result.processed_image.shape[1],
         result.processed_image.shape[0],
     )
-    return "Preprocess: READY"
+    return "Preprocess: READY", result
 
 
 def main() -> None:
@@ -214,12 +229,26 @@ def main() -> None:
         if settings.save_preprocess_debug_images
         else None
     )
+    dataset_saver = (
+        CharacterDatasetImageSaver(
+            output_dir=settings.dataset_capture_output_dir,
+            image_format=settings.dataset_capture_image_format,
+            filename_prefix=settings.dataset_capture_filename_prefix,
+        )
+        if settings.enable_dataset_capture
+        else None
+    )
     air_canvas: AirCanvas | None = None
     drawing_controller: DrawingController | None = None
     last_save_result: SaveResult | None = None
     last_preprocess_status: str | None = None
+    last_dataset_status: str | None = None
+    selected_dataset_label = CharacterDatasetImageSaver.normalize_label(
+        settings.dataset_capture_initial_label
+    )
     save_status_expires_at_ms = 0
     preprocess_status_expires_at_ms = 0
+    dataset_status_expires_at_ms = 0
     previous_timestamp_ms = 0
 
     try:
@@ -275,7 +304,7 @@ def main() -> None:
                 save_status_expires_at_ms = previous_timestamp_ms + settings.save_status_display_ms
                 log_save_result(save_result)
                 if save_result.success:
-                    last_preprocess_status = preprocess_canvas_snapshot(
+                    last_preprocess_status, _preprocess_result = preprocess_canvas_snapshot(
                         air_canvas,
                         preprocessor,
                         debug_exporter,
@@ -318,6 +347,13 @@ def main() -> None:
                 and previous_timestamp_ms <= preprocess_status_expires_at_ms
                 else []
             )
+            dataset_status_lines = (
+                [last_dataset_status]
+                if settings.show_save_status
+                and last_dataset_status is not None
+                and previous_timestamp_ms <= dataset_status_expires_at_ms
+                else []
+            )
             display_frame = processor.draw_debug_info(
                 annotated_frame,
                 fps=fps,
@@ -332,8 +368,21 @@ def main() -> None:
                     f"Clear: {settings.canvas_clear_key.upper()}",
                     f"Save: {settings.manual_save_key.upper()}",
                     f"Preprocess: {settings.manual_preprocess_key.upper()}",
+                    *(
+                        [
+                            f"Dataset Label: {selected_dataset_label}",
+                            (
+                                f"Dataset Save: {settings.dataset_capture_save_key.upper()} "
+                                f"{settings.dataset_capture_previous_label_key}/"
+                                f"{settings.dataset_capture_next_label_key}"
+                            ),
+                        ]
+                        if settings.enable_dataset_capture
+                        else []
+                    ),
                     *save_status_lines,
                     *preprocess_status_lines,
+                    *dataset_status_lines,
                     *(
                         [
                             f"Raw Gesture: {raw_gesture.value}",
@@ -391,7 +440,7 @@ def main() -> None:
                     )
                     log_save_result(save_result)
                     if save_result.success:
-                        last_preprocess_status = preprocess_canvas_snapshot(
+                        last_preprocess_status, _preprocess_result = preprocess_canvas_snapshot(
                             air_canvas,
                             preprocessor,
                             debug_exporter,
@@ -414,7 +463,7 @@ def main() -> None:
                 save_status_expires_at_ms = previous_timestamp_ms + settings.save_status_display_ms
                 log_save_result(save_result)
                 if save_result.success:
-                    last_preprocess_status = preprocess_canvas_snapshot(
+                    last_preprocess_status, _preprocess_result = preprocess_canvas_snapshot(
                         air_canvas,
                         preprocessor,
                         debug_exporter,
@@ -430,12 +479,79 @@ def main() -> None:
                 and drawing_controller is not None
                 and is_manual_preprocess_key(key, settings.manual_preprocess_key)
             ):
-                last_preprocess_status = preprocess_canvas_snapshot(
+                last_preprocess_status, _preprocess_result = preprocess_canvas_snapshot(
                     air_canvas,
                     preprocessor,
                     debug_exporter,
                 )
                 preprocess_status_expires_at_ms = (
+                    previous_timestamp_ms + settings.save_status_display_ms
+                )
+                continue
+            if (
+                settings.enable_keyboard_fallback
+                and settings.enable_dataset_capture
+                and dataset_saver is not None
+                and is_dataset_label_previous_key(key, settings.dataset_capture_previous_label_key)
+            ):
+                selected_dataset_label = CharacterDatasetImageSaver.previous_label(
+                    selected_dataset_label
+                )
+                last_dataset_status = f"Dataset Label: {selected_dataset_label}"
+                dataset_status_expires_at_ms = (
+                    previous_timestamp_ms + settings.save_status_display_ms
+                )
+                logger.info("Dataset capture label changed to %s", selected_dataset_label)
+                continue
+            if (
+                settings.enable_keyboard_fallback
+                and settings.enable_dataset_capture
+                and dataset_saver is not None
+                and is_dataset_label_next_key(key, settings.dataset_capture_next_label_key)
+            ):
+                selected_dataset_label = CharacterDatasetImageSaver.next_label(
+                    selected_dataset_label
+                )
+                last_dataset_status = f"Dataset Label: {selected_dataset_label}"
+                dataset_status_expires_at_ms = (
+                    previous_timestamp_ms + settings.save_status_display_ms
+                )
+                logger.info("Dataset capture label changed to %s", selected_dataset_label)
+                continue
+            if (
+                settings.enable_keyboard_fallback
+                and settings.enable_dataset_capture
+                and dataset_saver is not None
+                and drawing_controller is not None
+                and is_dataset_capture_key(key, settings.dataset_capture_save_key)
+            ):
+                last_preprocess_status, preprocess_result = preprocess_canvas_snapshot(
+                    air_canvas,
+                    preprocessor,
+                    debug_exporter,
+                )
+                preprocess_status_expires_at_ms = (
+                    previous_timestamp_ms + settings.save_status_display_ms
+                )
+                if preprocess_result is None:
+                    last_dataset_status = "Dataset: SKIPPED"
+                else:
+                    try:
+                        dataset_result = dataset_saver.save(
+                            selected_dataset_label,
+                            preprocess_result.processed_image,
+                        )
+                    except (DrawingStorageError, ValueError) as error:
+                        last_dataset_status = "Dataset: FAILED"
+                        logger.error("Dataset capture failed: %s", error)
+                    else:
+                        last_dataset_status = (
+                            f"Dataset: {dataset_result.label}/{dataset_result.file_path.name}"
+                        )
+                        logger.info("%s", dataset_result.message)
+                        if settings.dataset_capture_clear_after_save:
+                            drawing_controller.clear(previous_timestamp_ms)
+                dataset_status_expires_at_ms = (
                     previous_timestamp_ms + settings.save_status_display_ms
                 )
                 continue

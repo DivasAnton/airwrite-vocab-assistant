@@ -21,12 +21,14 @@ data/processed/*
 data/saved_drawings/*
 data/drawings/*
 data/preprocessed_debug/*
+data/raw_airwrite/*
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/saved_drawings/.gitkeep
 !data/drawings/.gitkeep
 !data/preprocessed_debug/.gitkeep
+!data/raw_airwrite/.gitkeep
 
 models/*
 !models/.gitkeep

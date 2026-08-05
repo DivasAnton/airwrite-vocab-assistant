@@ -1,5 +1,15 @@
 # AirWrite Vocabulary Assistant
 
+## Dataset Capture Workflow
+
+Use Sprint 8 preprocessing to collect custom Sprint 9 samples directly from the app.
+
+- Select label: `[` previous, `]` next.
+- Capture current drawing as dataset sample: `V`.
+- Output folder: `data/raw_airwrite/<LABEL>/`.
+- Saved sample is the preprocessed `28x28` grayscale image, not the camera frame.
+- Clear canvas manually with `C` after saving, unless `DATASET_CAPTURE_CLEAR_AFTER_SAVE=true`.
+
 ## Sprint 8 - Handwriting Image Preprocessing
 
 Sprint 8 adds a model-ready preprocessing pipeline for AirCanvas drawing images. The pipeline takes
@@ -45,6 +55,25 @@ app/preprocessing/
 - `tests/test_aspect_ratio_resizer.py`
 - `tests/test_handwriting_preprocessor.py`
 - `docs/sprint_8_preprocessing_test_plan.md`
+
+## Sprint 9 - Dataset Preparation
+
+The custom uppercase AirWrite images are validated and split with a fixed seed before training.
+
+```powershell
+python -m scripts.build_dataset_manifest
+```
+
+Generated files:
+
+- `data/manifests/dataset_manifest.csv`: valid, unique A-Z samples.
+- `data/manifests/dataset_splits.csv`: reproducible 70/15/15 train, validation, and test split.
+- `data/manifests/dataset_validation_errors.csv`: corrupt images, invalid labels, wrong image
+  contracts, empty drawings, and exact duplicates.
+- `data/manifests/dataset_report.json`: class balance and split statistics.
+
+The validator requires grayscale `28x28` PNG images and re-runs the Sprint 8 preprocessing contract.
+Original dataset images are never moved, renamed, or deleted.
 
 > AI-powered vocabulary assistant using air-writing interaction.
 

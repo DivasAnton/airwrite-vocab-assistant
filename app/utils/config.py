@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from math import isclose
 from pathlib import Path
 from typing import cast
 
@@ -126,6 +127,17 @@ class Settings:
         "PREPROCESS_DEBUG_OUTPUT_DIR", "data/preprocessed_debug"
     )
     manual_preprocess_key: str = os.getenv("MANUAL_PREPROCESS_KEY", "p")
+    enable_dataset_capture: bool = env_to_bool("ENABLE_DATASET_CAPTURE", True)
+    dataset_capture_output_dir: Path = PROJECT_ROOT / os.getenv(
+        "DATASET_CAPTURE_OUTPUT_DIR", "data/raw_airwrite"
+    )
+    dataset_capture_image_format: str = os.getenv("DATASET_CAPTURE_IMAGE_FORMAT", "png")
+    dataset_capture_filename_prefix: str = os.getenv("DATASET_CAPTURE_FILENAME_PREFIX", "airwrite")
+    dataset_capture_initial_label: str = os.getenv("DATASET_CAPTURE_INITIAL_LABEL", "A")
+    dataset_capture_save_key: str = os.getenv("DATASET_CAPTURE_SAVE_KEY", "v")
+    dataset_capture_next_label_key: str = os.getenv("DATASET_CAPTURE_NEXT_LABEL_KEY", "]")
+    dataset_capture_previous_label_key: str = os.getenv("DATASET_CAPTURE_PREVIOUS_LABEL_KEY", "[")
+    dataset_capture_clear_after_save: bool = env_to_bool("DATASET_CAPTURE_CLEAR_AFTER_SAVE", False)
 
     model_path: Path = PROJECT_ROOT / os.getenv("MODEL_PATH", "models/character_cnn.pth")
     raw_data_dir: Path = PROJECT_ROOT / os.getenv("RAW_DATA_DIR", "data/raw")
@@ -138,6 +150,8 @@ class Settings:
         self.saved_drawings_dir.mkdir(parents=True, exist_ok=True)
         if self.save_preprocess_debug_images:
             self.preprocess_debug_output_dir.mkdir(parents=True, exist_ok=True)
+        if self.enable_dataset_capture:
+            self.dataset_capture_output_dir.mkdir(parents=True, exist_ok=True)
 
     def validate_hand_detection_config(self) -> None:
         if self.hand_num_hands <= 0:
@@ -250,6 +264,107 @@ class Settings:
             self.canvas_clear_key.lower(),
         }:
             raise ValueError("MANUAL_PREPROCESS_KEY must not conflict with save or clear keys")
+        if self.dataset_capture_image_format.lower().strip().lstrip(".") != "png":
+            raise ValueError("DATASET_CAPTURE_IMAGE_FORMAT must be png")
+        if not self.dataset_capture_filename_prefix.strip():
+            raise ValueError("DATASET_CAPTURE_FILENAME_PREFIX must not be empty")
+        normalized_initial_label = self.dataset_capture_initial_label.strip().upper()
+        if (
+            len(normalized_initial_label) != 1
+            or normalized_initial_label not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        ):
+            raise ValueError("DATASET_CAPTURE_INITIAL_LABEL must be A-Z")
+        capture_keys = {
+            self.dataset_capture_save_key.lower(),
+            self.dataset_capture_next_label_key.lower(),
+            self.dataset_capture_previous_label_key.lower(),
+        }
+        if any(len(key) != 1 for key in capture_keys):
+            raise ValueError("Dataset capture keys must contain exactly one character")
+        if len(capture_keys) != 3:
+            raise ValueError("Dataset capture keys must be distinct")
+        reserved_keys = {
+            self.manual_save_key.lower(),
+            self.manual_preprocess_key.lower(),
+            self.canvas_clear_key.lower(),
+            "d",
+            "q",
+        }
+        if capture_keys & reserved_keys:
+            raise ValueError(
+                "Dataset capture keys must not conflict with save/preprocess/clear/done/quit keys"
+            )
+
+
+@dataclass
+class TrainingSettings:
+    dataset_root: Path = PROJECT_ROOT / os.getenv("DATASET_ROOT", "data/raw_airwrite")
+    manifest_path: Path = PROJECT_ROOT / os.getenv(
+        "DATASET_MANIFEST_PATH", "data/manifests/dataset_manifest.csv"
+    )
+    split_path: Path = PROJECT_ROOT / os.getenv(
+        "DATASET_SPLITS_PATH", "data/manifests/dataset_splits.csv"
+    )
+    train_ratio: float = env_to_float("TRAIN_RATIO", 0.70)
+    validation_ratio: float = env_to_float("VALIDATION_RATIO", 0.15)
+    test_ratio: float = env_to_float("TEST_RATIO", 0.15)
+    random_seed: int = int(os.getenv("TRAINING_RANDOM_SEED", "42"))
+    input_width: int = int(os.getenv("MODEL_INPUT_WIDTH", "28"))
+    input_height: int = int(os.getenv("MODEL_INPUT_HEIGHT", "28"))
+    input_channels: int = int(os.getenv("MODEL_INPUT_CHANNELS", "1"))
+    num_classes: int = int(os.getenv("MODEL_NUM_CLASSES", "26"))
+    batch_size: int = int(os.getenv("TRAIN_BATCH_SIZE", "64"))
+    max_epochs: int = int(os.getenv("TRAIN_MAX_EPOCHS", "50"))
+    learning_rate: float = env_to_float("TRAIN_LEARNING_RATE", 0.001)
+    early_stopping_patience: int = int(os.getenv("TRAIN_EARLY_STOPPING_PATIENCE", "5"))
+    enable_augmentation: bool = env_to_bool("TRAIN_ENABLE_AUGMENTATION", True)
+    rotation_factor: float = env_to_float("TRAIN_ROTATION_FACTOR", 0.03)
+    translation_factor: float = env_to_float("TRAIN_TRANSLATION_FACTOR", 0.08)
+    zoom_factor: float = env_to_float("TRAIN_ZOOM_FACTOR", 0.08)
+    model_output_path: Path = PROJECT_ROOT / os.getenv(
+        "MODEL_OUTPUT_PATH", "artifacts/models/character_recognizer.keras"
+    )
+    labels_output_path: Path = PROJECT_ROOT / os.getenv(
+        "LABELS_OUTPUT_PATH", "artifacts/labels/labels.json"
+    )
+    metrics_output_path: Path = PROJECT_ROOT / os.getenv(
+        "METRICS_OUTPUT_PATH", "artifacts/metadata/metrics.json"
+    )
+    model_metadata_path: Path = PROJECT_ROOT / os.getenv(
+        "MODEL_METADATA_PATH", "artifacts/metadata/model_metadata.json"
+    )
+    preprocessing_config_output_path: Path = PROJECT_ROOT / os.getenv(
+        "PREPROCESSING_CONFIG_OUTPUT_PATH",
+        "artifacts/metadata/preprocessing_config.json",
+    )
+    training_history_path: Path = PROJECT_ROOT / os.getenv(
+        "TRAINING_HISTORY_PATH", "artifacts/reports/training_history.csv"
+    )
+
+    def validate(self) -> None:
+        ratios = (self.train_ratio, self.validation_ratio, self.test_ratio)
+        if any(ratio <= 0.0 or ratio >= 1.0 for ratio in ratios):
+            raise ValueError(
+                "TRAIN_RATIO, VALIDATION_RATIO, and TEST_RATIO must be between 0 and 1"
+            )
+        if not isclose(sum(ratios), 1.0, rel_tol=0.0, abs_tol=1e-9):
+            raise ValueError("TRAIN_RATIO + VALIDATION_RATIO + TEST_RATIO must equal 1.0")
+        if self.input_width <= 0 or self.input_height <= 0 or self.input_channels <= 0:
+            raise ValueError("Model input dimensions must be greater than 0")
+        if self.num_classes != 26:
+            raise ValueError("MODEL_NUM_CLASSES must match the 26 uppercase A-Z labels")
+        if self.batch_size <= 0 or self.max_epochs <= 0:
+            raise ValueError("TRAIN_BATCH_SIZE and TRAIN_MAX_EPOCHS must be greater than 0")
+        if self.learning_rate <= 0.0:
+            raise ValueError("TRAIN_LEARNING_RATE must be greater than 0")
+        if self.early_stopping_patience < 0:
+            raise ValueError("TRAIN_EARLY_STOPPING_PATIENCE must be greater than or equal to 0")
+        if any(
+            factor < 0.0
+            for factor in (self.rotation_factor, self.translation_factor, self.zoom_factor)
+        ):
+            raise ValueError("Training augmentation factors must be greater than or equal to 0")
 
 
 settings = Settings()
+training_settings = TrainingSettings()
