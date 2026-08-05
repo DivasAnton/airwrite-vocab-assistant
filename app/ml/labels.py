@@ -17,3 +17,7 @@ def index_to_label(index: int) -> str:
     if not 0 <= index < len(CHARACTER_LABELS):
         raise ValueError(f"Label index must be between 0 and 25, got {index}")
     return CHARACTER_LABELS[index]
+
+
+def labels_payload() -> dict[str, object]:
+    return {"version": 1, "labels": list(CHARACTER_LABELS)}

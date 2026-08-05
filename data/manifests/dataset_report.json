@@ -1,7 +1,7 @@
 {
   "dataset_root": "data/raw_airwrite",
-  "scanned_images": 1313,
-  "valid_unique_images": 1307,
+  "scanned_images": 1312,
+  "valid_unique_images": 1306,
   "invalid_or_duplicate_images": 6,
   "structure_issues": 0,
   "exact_duplicates": 6,
@@ -26,7 +26,7 @@
     "R": 50,
     "S": 50,
     "T": 54,
-    "U": 50,
+    "U": 49,
     "V": 50,
     "W": 51,
     "X": 57,
@@ -34,13 +34,13 @@
     "Z": 49
   },
   "source_counts": {
-    "airwrite": 1307
+    "airwrite": 1306
   },
   "smallest_class_count": 44,
   "largest_class_count": 57,
   "imbalance_ratio": 1.2954545454545454,
   "split_counts": {
-    "train": 915,
+    "train": 914,
     "validation": 196,
     "test": 196
   },
@@ -66,7 +66,7 @@
       "R": 36,
       "S": 36,
       "T": 38,
-      "U": 36,
+      "U": 35,
       "V": 36,
       "W": 35,
       "X": 39,

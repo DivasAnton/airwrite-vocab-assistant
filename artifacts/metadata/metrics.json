@@ -1,0 +1,15 @@
+{
+  "test_loss": 0.817591667175293,
+  "test_accuracy": 0.7908163265306123,
+  "macro_precision": 0.8205888128965053,
+  "macro_recall": 0.7918956043956045,
+  "macro_f1": 0.77384614439568,
+  "top_3_accuracy": 0.9030612244897959,
+  "test_sample_count": 196,
+  "source_metrics": {
+    "airwrite": {
+      "accuracy": 0.7908163265306123,
+      "sample_count": 196.0
+    }
+  }
+}

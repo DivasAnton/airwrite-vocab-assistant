@@ -1,0 +1,4 @@
+image_path,label,reason,recommended_action
+data/raw_airwrite/P/airwrite_P_20260804_154438_415603_b9576f.png,P,Unusually narrow loop and long diagonal stroke,Review and keep only if this matches the intended P drawing
+data/raw_airwrite/S/airwrite_S_20260804_160528_943912_1b0d88.png,S,Shape can resemble P more than S,Review label and redraw if needed
+data/raw_airwrite/U/airwrite_U_20260804_161213_984214_fe5bd7.png,U,Filled blob does not visibly resemble U,Remove or recapture before final training

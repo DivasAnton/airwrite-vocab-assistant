@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "output_width": 28,
+  "output_height": 28,
+  "channels": 1,
+  "background": "black",
+  "foreground": "light",
+  "normalized_min": 0.0,
+  "normalized_max": 1.0,
+  "content_width": 20,
+  "content_height": 20,
+  "binary_threshold": 20,
+  "crop_padding": 8,
+  "min_foreground_pixels": 10,
+  "invert_input": false,
+  "center_of_mass": false
+}

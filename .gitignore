@@ -22,6 +22,7 @@ data/saved_drawings/*
 data/drawings/*
 data/preprocessed_debug/*
 data/raw_airwrite/*
+data/training_cache/*
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep
@@ -29,6 +30,10 @@ data/raw_airwrite/*
 !data/drawings/.gitkeep
 !data/preprocessed_debug/.gitkeep
 !data/raw_airwrite/.gitkeep
+!data/training_cache/.gitkeep
+
+artifacts/models/*
+!artifacts/models/.gitkeep
 
 models/*
 !models/.gitkeep

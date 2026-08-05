@@ -295,6 +295,24 @@ class Settings:
                 "Dataset capture keys must not conflict with save/preprocess/clear/done/quit keys"
             )
 
+    def preprocessing_runtime_contract(self) -> dict[str, object]:
+        return {
+            "output_width": self.preprocess_output_width,
+            "output_height": self.preprocess_output_height,
+            "channels": 1,
+            "background": "black",
+            "foreground": "light",
+            "normalized_min": 0.0,
+            "normalized_max": 1.0,
+            "content_width": self.preprocess_content_width,
+            "content_height": self.preprocess_content_height,
+            "binary_threshold": self.preprocess_binary_threshold,
+            "crop_padding": self.preprocess_crop_padding,
+            "min_foreground_pixels": self.preprocess_min_foreground_pixels,
+            "invert_input": self.preprocess_invert_input,
+            "center_of_mass": self.preprocess_center_of_mass,
+        }
+
 
 @dataclass
 class TrainingSettings:
@@ -309,6 +327,7 @@ class TrainingSettings:
     validation_ratio: float = env_to_float("VALIDATION_RATIO", 0.15)
     test_ratio: float = env_to_float("TEST_RATIO", 0.15)
     random_seed: int = int(os.getenv("TRAINING_RANDOM_SEED", "42"))
+    dataset_images_preprocessed: bool = env_to_bool("DATASET_IMAGES_PREPROCESSED", True)
     input_width: int = int(os.getenv("MODEL_INPUT_WIDTH", "28"))
     input_height: int = int(os.getenv("MODEL_INPUT_HEIGHT", "28"))
     input_channels: int = int(os.getenv("MODEL_INPUT_CHANNELS", "1"))
@@ -340,6 +359,31 @@ class TrainingSettings:
     training_history_path: Path = PROJECT_ROOT / os.getenv(
         "TRAINING_HISTORY_PATH", "artifacts/reports/training_history.csv"
     )
+    classification_report_path: Path = PROJECT_ROOT / os.getenv(
+        "CLASSIFICATION_REPORT_PATH", "artifacts/reports/classification_report.json"
+    )
+    confusion_matrix_json_path: Path = PROJECT_ROOT / os.getenv(
+        "CONFUSION_MATRIX_JSON_PATH", "artifacts/reports/confusion_matrix.json"
+    )
+    confusion_matrix_image_path: Path = PROJECT_ROOT / os.getenv(
+        "CONFUSION_MATRIX_IMAGE_PATH", "artifacts/reports/confusion_matrix.png"
+    )
+    error_analysis_path: Path = PROJECT_ROOT / os.getenv(
+        "ERROR_ANALYSIS_PATH", "artifacts/reports/error_analysis.csv"
+    )
+    prediction_probabilities_path: Path = PROJECT_ROOT / os.getenv(
+        "PREDICTION_PROBABILITIES_PATH", "artifacts/reports/prediction_probabilities.csv"
+    )
+    experiment_log_path: Path = PROJECT_ROOT / os.getenv(
+        "EXPERIMENT_LOG_PATH", "artifacts/reports/experiments.csv"
+    )
+    baseline_metrics_path: Path = PROJECT_ROOT / os.getenv(
+        "BASELINE_METRICS_PATH", "artifacts/metadata/baseline_metrics.json"
+    )
+    model_name: str = os.getenv("MODEL_NAME", "airwrite_character_recognizer")
+    model_version: str = os.getenv("MODEL_VERSION", "0.1.0")
+    experiment_id: str = os.getenv("TRAIN_EXPERIMENT_ID", "exp_custom_001")
+    experiment_notes: str = os.getenv("TRAIN_EXPERIMENT_NOTES", "Custom AirWrite uppercase A-Z")
 
     def validate(self) -> None:
         ratios = (self.train_ratio, self.validation_ratio, self.test_ratio)
@@ -349,8 +393,10 @@ class TrainingSettings:
             )
         if not isclose(sum(ratios), 1.0, rel_tol=0.0, abs_tol=1e-9):
             raise ValueError("TRAIN_RATIO + VALIDATION_RATIO + TEST_RATIO must equal 1.0")
-        if self.input_width <= 0 or self.input_height <= 0 or self.input_channels <= 0:
+        if self.input_width <= 0 or self.input_height <= 0:
             raise ValueError("Model input dimensions must be greater than 0")
+        if self.input_channels != 1:
+            raise ValueError("MODEL_INPUT_CHANNELS must be 1 for grayscale AirWrite images")
         if self.num_classes != 26:
             raise ValueError("MODEL_NUM_CLASSES must match the 26 uppercase A-Z labels")
         if self.batch_size <= 0 or self.max_epochs <= 0:
@@ -360,11 +406,82 @@ class TrainingSettings:
         if self.early_stopping_patience < 0:
             raise ValueError("TRAIN_EARLY_STOPPING_PATIENCE must be greater than or equal to 0")
         if any(
-            factor < 0.0
+            factor < 0.0 or factor >= 1.0
             for factor in (self.rotation_factor, self.translation_factor, self.zoom_factor)
         ):
-            raise ValueError("Training augmentation factors must be greater than or equal to 0")
+            raise ValueError("Training augmentation factors must be between 0 inclusive and 1")
+        if not self.model_name.strip() or not self.model_version.strip():
+            raise ValueError("MODEL_NAME and MODEL_VERSION must not be empty")
+        if not self.experiment_id.strip():
+            raise ValueError("TRAIN_EXPERIMENT_ID must not be empty")
+
+    def create_artifact_directories(self) -> None:
+        artifact_paths = (
+            self.model_output_path,
+            self.labels_output_path,
+            self.metrics_output_path,
+            self.model_metadata_path,
+            self.preprocessing_config_output_path,
+            self.training_history_path,
+            self.classification_report_path,
+            self.confusion_matrix_json_path,
+            self.confusion_matrix_image_path,
+            self.error_analysis_path,
+            self.prediction_probabilities_path,
+            self.experiment_log_path,
+            self.baseline_metrics_path,
+        )
+        for artifact_path in artifact_paths:
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+@dataclass
+class InferenceSettings:
+    model_path: Path = PROJECT_ROOT / os.getenv(
+        "CHARACTER_MODEL_PATH", "artifacts/models/character_recognizer.keras"
+    )
+    labels_path: Path = PROJECT_ROOT / os.getenv(
+        "CHARACTER_LABELS_PATH", "artifacts/labels/labels.json"
+    )
+    metadata_path: Path = PROJECT_ROOT / os.getenv(
+        "MODEL_METADATA_PATH", "artifacts/metadata/model_metadata.json"
+    )
+    preprocessing_config_path: Path = PROJECT_ROOT / os.getenv(
+        "MODEL_PREPROCESSING_CONFIG_PATH", "artifacts/metadata/preprocessing_config.json"
+    )
+    top_k: int = int(os.getenv("PREDICTION_TOP_K", "3"))
+    min_confidence: float = env_to_float("PREDICTION_MIN_CONFIDENCE", 0.60)
+    min_margin: float = env_to_float("PREDICTION_MIN_MARGIN", 0.15)
+    auto_predict_on_done: bool = env_to_bool("ENABLE_AUTO_PREDICT_ON_DONE", True)
+    manual_predict_enabled: bool = env_to_bool("ENABLE_MANUAL_PREDICT", True)
+    manual_predict_key: str = os.getenv("MANUAL_PREDICT_KEY", "i")
+    show_prediction_status: bool = env_to_bool("SHOW_PREDICTION_STATUS", True)
+    show_top_k_predictions: bool = env_to_bool("SHOW_TOP_K_PREDICTIONS", True)
+    status_display_ms: int = int(os.getenv("PREDICTION_STATUS_DISPLAY_MS", "4000"))
+    log_latency: bool = env_to_bool("LOG_PREDICTION_LATENCY", True)
+    latency_warning_ms: int = int(os.getenv("PREDICTION_LATENCY_WARNING_MS", "500"))
+
+    def validate(self, num_classes: int = 26) -> None:
+        for name, path in (
+            ("CHARACTER_MODEL_PATH", self.model_path),
+            ("CHARACTER_LABELS_PATH", self.labels_path),
+            ("MODEL_METADATA_PATH", self.metadata_path),
+            ("MODEL_PREPROCESSING_CONFIG_PATH", self.preprocessing_config_path),
+        ):
+            if not str(path).strip():
+                raise ValueError(f"{name} must not be empty")
+        if not 0 < self.top_k <= num_classes:
+            raise ValueError(f"PREDICTION_TOP_K must be between 1 and {num_classes}")
+        validate_confidence("PREDICTION_MIN_CONFIDENCE", self.min_confidence)
+        validate_confidence("PREDICTION_MIN_MARGIN", self.min_margin)
+        if len(self.manual_predict_key) != 1:
+            raise ValueError("MANUAL_PREDICT_KEY must contain exactly one character")
+        if self.status_display_ms < 0:
+            raise ValueError("PREDICTION_STATUS_DISPLAY_MS must be greater than or equal to 0")
+        if self.latency_warning_ms <= 0:
+            raise ValueError("PREDICTION_LATENCY_WARNING_MS must be greater than 0")
 
 
 settings = Settings()
 training_settings = TrainingSettings()
+inference_settings = InferenceSettings()

@@ -13,6 +13,17 @@ from app.drawing.drawing_controller import DrawingController
 from app.drawing.drawing_state import DrawingState
 from app.drawing.drawing_state_machine import DrawingStateMachine
 from app.drawing.stroke_manager import StrokeManager
+from app.inference.character_predictor import CharacterPredictor
+from app.inference.character_recognition_service import CharacterRecognitionService
+from app.inference.completion_recognition_coordinator import (
+    CompletionRecognitionCoordinator,
+)
+from app.inference.exceptions import InferenceError
+from app.inference.model_bundle_loader import ModelBundleLoader
+from app.inference.model_bundle_validator import ModelBundleValidator
+from app.inference.prediction_policy import PredictionPolicy
+from app.inference.prediction_result import PredictionResult
+from app.inference.prediction_status_renderer import PredictionStatusRenderer
 from app.preprocessing.aspect_ratio_resizer import AspectRatioResizer
 from app.preprocessing.bounding_box_extractor import BoundingBoxExtractor
 from app.preprocessing.debug_image_exporter import DebugImageExporter
@@ -25,7 +36,7 @@ from app.storage.drawing_image_saver import DrawingImageSaver
 from app.storage.drawing_save_coordinator import DrawingSaveCoordinator
 from app.storage.exceptions import DrawingStorageError
 from app.storage.save_result import SaveResult, SaveStatus
-from app.utils.config import settings
+from app.utils.config import inference_settings, settings
 from app.utils.logger import get_logger
 from app.vision.finger_tracking_renderer import FingerTrackingRenderer
 from app.vision.gesture import Gesture
@@ -67,6 +78,10 @@ def is_manual_save_key(key: int, manual_save_key: str) -> bool:
 
 def is_manual_preprocess_key(key: int, manual_preprocess_key: str) -> bool:
     return key in {ord(manual_preprocess_key.lower()), ord(manual_preprocess_key.upper())}
+
+
+def is_manual_predict_key(key: int, manual_predict_key: str) -> bool:
+    return key in {ord(manual_predict_key.lower()), ord(manual_predict_key.upper())}
 
 
 def is_dataset_capture_key(key: int, capture_key: str) -> bool:
@@ -157,6 +172,7 @@ def main() -> None:
     settings.validate_gesture_config()
     settings.validate_storage_config()
     settings.validate_preprocessing_config()
+    inference_settings.validate()
 
     logger.info("%s starting", settings.app_name)
     logger.info("Environment: %s", settings.app_env)
@@ -224,6 +240,45 @@ def main() -> None:
         ),
         include_debug_images=settings.save_preprocess_debug_images,
     )
+    recognition_service: CharacterRecognitionService | None = None
+    try:
+        bundle = ModelBundleLoader(
+            model_path=inference_settings.model_path,
+            labels_path=inference_settings.labels_path,
+            metadata_path=inference_settings.metadata_path,
+            preprocessing_config_path=inference_settings.preprocessing_config_path,
+        ).load()
+        ModelBundleValidator().validate(bundle, settings.preprocessing_runtime_contract())
+        predictor = CharacterPredictor(bundle=bundle, top_k=inference_settings.top_k)
+        recognition_service = CharacterRecognitionService(
+            preprocessor=preprocessor,
+            predictor=predictor,
+            policy=PredictionPolicy(
+                min_confidence=inference_settings.min_confidence,
+                min_margin=inference_settings.min_margin,
+            ),
+            logger=logger,
+            log_latency=inference_settings.log_latency,
+            latency_warning_ms=inference_settings.latency_warning_ms,
+        )
+        logger.info(
+            "Character model v%s loaded once from %s",
+            bundle.model_version,
+            inference_settings.model_path,
+        )
+    except InferenceError:
+        logger.exception("Character prediction is disabled because the model bundle is unavailable")
+
+    completion_coordinator = CompletionRecognitionCoordinator(
+        save_coordinator=save_coordinator,
+        recognition_service=recognition_service,
+        auto_predict_on_done=inference_settings.auto_predict_on_done,
+        manual_predict_enabled=inference_settings.manual_predict_enabled,
+    )
+    prediction_renderer = PredictionStatusRenderer(
+        show_top_k=inference_settings.show_top_k_predictions,
+        status_display_ms=inference_settings.status_display_ms,
+    )
     debug_exporter = (
         DebugImageExporter(settings.preprocess_debug_output_dir)
         if settings.save_preprocess_debug_images
@@ -243,12 +298,14 @@ def main() -> None:
     last_save_result: SaveResult | None = None
     last_preprocess_status: str | None = None
     last_dataset_status: str | None = None
+    last_prediction_result: PredictionResult | None = None
     selected_dataset_label = CharacterDatasetImageSaver.normalize_label(
         settings.dataset_capture_initial_label
     )
     save_status_expires_at_ms = 0
     preprocess_status_expires_at_ms = 0
     dataset_status_expires_at_ms = 0
+    prediction_display_started_ms = 0
     previous_timestamp_ms = 0
 
     try:
@@ -298,22 +355,26 @@ def main() -> None:
             )
             assert drawing_controller is not None
             controller_result = drawing_controller.update(stable_gesture, finger_result)
-            save_result = save_coordinator.handle_state(controller_result.state, air_canvas)
-            if save_result is not None:
+            completion_result = completion_coordinator.handle_transition(
+                controller_result.state,
+                air_canvas,
+            )
+            if completion_result is not None and completion_result.save_result is not None:
+                save_result = completion_result.save_result
                 last_save_result = save_result
                 save_status_expires_at_ms = previous_timestamp_ms + settings.save_status_display_ms
                 log_save_result(save_result)
-                if save_result.success:
-                    last_preprocess_status, _preprocess_result = preprocess_canvas_snapshot(
-                        air_canvas,
-                        preprocessor,
-                        debug_exporter,
-                    )
-                    preprocess_status_expires_at_ms = (
-                        previous_timestamp_ms + settings.save_status_display_ms
-                    )
-                    if settings.clear_canvas_after_save:
-                        drawing_controller.clear(previous_timestamp_ms)
+            if completion_result is not None and completion_result.prediction_result is not None:
+                last_prediction_result = completion_result.prediction_result
+                prediction_display_started_ms = previous_timestamp_ms
+                logger.info("%s", last_prediction_result.message)
+            if (
+                completion_result is not None
+                and completion_result.save_result is not None
+                and completion_result.save_result.success
+                and settings.clear_canvas_after_save
+            ):
+                drawing_controller.clear(previous_timestamp_ms)
 
             annotated_frame = renderer.draw(mirrored_frame, hand_result)
             annotated_frame = finger_renderer.draw(annotated_frame, finger_result)
@@ -369,6 +430,11 @@ def main() -> None:
                     f"Save: {settings.manual_save_key.upper()}",
                     f"Preprocess: {settings.manual_preprocess_key.upper()}",
                     *(
+                        [f"Predict: {inference_settings.manual_predict_key.upper()}"]
+                        if inference_settings.manual_predict_enabled
+                        else []
+                    ),
+                    *(
                         [
                             f"Dataset Label: {selected_dataset_label}",
                             (
@@ -404,6 +470,13 @@ def main() -> None:
                     ),
                 ],
             )
+            if inference_settings.show_prediction_status:
+                display_frame = prediction_renderer.render(
+                    display_frame,
+                    last_prediction_result,
+                    prediction_display_started_ms,
+                    previous_timestamp_ms,
+                )
 
             cv2.imshow(settings.camera_window_name, display_frame)
             if settings.show_canvas_window:
@@ -432,24 +505,31 @@ def main() -> None:
                     DrawingState.DONE,
                     previous_timestamp_ms,
                 )
-                save_result = save_coordinator.handle_state(controller_result.state, air_canvas)
-                if save_result is not None:
+                completion_result = completion_coordinator.handle_transition(
+                    controller_result.state,
+                    air_canvas,
+                )
+                if completion_result is not None and completion_result.save_result is not None:
+                    save_result = completion_result.save_result
                     last_save_result = save_result
                     save_status_expires_at_ms = (
                         previous_timestamp_ms + settings.save_status_display_ms
                     )
                     log_save_result(save_result)
-                    if save_result.success:
-                        last_preprocess_status, _preprocess_result = preprocess_canvas_snapshot(
-                            air_canvas,
-                            preprocessor,
-                            debug_exporter,
-                        )
-                        preprocess_status_expires_at_ms = (
-                            previous_timestamp_ms + settings.save_status_display_ms
-                        )
-                        if settings.clear_canvas_after_save:
-                            drawing_controller.clear(previous_timestamp_ms)
+                if (
+                    completion_result is not None
+                    and completion_result.prediction_result is not None
+                ):
+                    last_prediction_result = completion_result.prediction_result
+                    prediction_display_started_ms = previous_timestamp_ms
+                    logger.info("%s", last_prediction_result.message)
+                if (
+                    completion_result is not None
+                    and completion_result.save_result is not None
+                    and completion_result.save_result.success
+                    and settings.clear_canvas_after_save
+                ):
+                    drawing_controller.clear(previous_timestamp_ms)
                 logger.info("Keyboard fallback changed state to DONE")
                 continue
             if (
@@ -473,6 +553,18 @@ def main() -> None:
                     )
                     if settings.clear_canvas_after_save:
                         drawing_controller.clear(previous_timestamp_ms)
+                continue
+            if (
+                settings.enable_keyboard_fallback
+                and inference_settings.manual_predict_enabled
+                and drawing_controller is not None
+                and is_manual_predict_key(key, inference_settings.manual_predict_key)
+            ):
+                prediction_result = completion_coordinator.predict_now(air_canvas)
+                if prediction_result is not None:
+                    last_prediction_result = prediction_result
+                    prediction_display_started_ms = previous_timestamp_ms
+                    logger.info("Manual prediction: %s", prediction_result.message)
                 continue
             if (
                 settings.enable_keyboard_fallback

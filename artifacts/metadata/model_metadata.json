@@ -1,0 +1,36 @@
+{
+  "model_name": "airwrite_character_recognizer",
+  "model_version": "0.1.0",
+  "model_sha256": "fee2485d1a40355d5bcdba01520af90654e91591b9376449de98e32f40daa4bb",
+  "framework": "keras",
+  "input_shape": [
+    28,
+    28,
+    1
+  ],
+  "num_classes": 26,
+  "random_seed": 42,
+  "dataset_manifest": "data/manifests/dataset_splits.csv",
+  "dataset_images_preprocessed": true,
+  "split_counts": {
+    "train": 914,
+    "validation": 196,
+    "test": 196
+  },
+  "training_timestamp": "2026-08-05T03:27:26.720970+00:00",
+  "epochs_completed": 50,
+  "best_epoch": 50,
+  "validation_loss": 0.9101244807243347,
+  "validation_accuracy": 0.8163265585899353,
+  "test_accuracy": 0.7908163265306123,
+  "macro_f1": 0.77384614439568,
+  "top_3_accuracy": 0.9030612244897959,
+  "augmentation": {
+    "enabled": true,
+    "rotation_factor": 0.01,
+    "translation_factor": 0.03,
+    "zoom_factor": 0.03,
+    "horizontal_flip": false,
+    "vertical_flip": false
+  }
+}

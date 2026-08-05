@@ -1,5 +1,8 @@
 from datetime import datetime
 
+import numpy as np
+from numpy.typing import NDArray
+
 from app.drawing.air_canvas import AirCanvas
 from app.drawing.drawing_state import DrawingState
 from app.storage.drawing_image_saver import DrawingImageSaver
@@ -36,14 +39,41 @@ class DrawingSaveCoordinator:
         return self._save_canvas(canvas)
 
     def save_now(self, canvas: AirCanvas) -> SaveResult:
-        if not self.enable_manual_save:
+        return self.save_snapshot(
+            canvas.get_image(copy=True),
+            is_empty=canvas.is_empty(),
+            manual=True,
+        )
+
+    def save_snapshot(
+        self,
+        snapshot: NDArray[np.uint8],
+        *,
+        is_empty: bool,
+        manual: bool,
+    ) -> SaveResult:
+        if manual and not self.enable_manual_save:
             return SaveResult(
                 status=SaveStatus.DISABLED,
                 file_path=None,
                 saved_at=None,
                 message="Manual save is disabled",
             )
-        return self._save_canvas(canvas)
+        if not manual and not self.auto_save_on_done:
+            return SaveResult(
+                status=SaveStatus.DISABLED,
+                file_path=None,
+                saved_at=None,
+                message="Auto-save is disabled",
+            )
+        if is_empty:
+            return SaveResult(
+                status=SaveStatus.SKIPPED_EMPTY,
+                file_path=None,
+                saved_at=None,
+                message="Skipped save because canvas is empty",
+            )
+        return self._save_snapshot(snapshot)
 
     def _save_canvas(self, canvas: AirCanvas) -> SaveResult:
         if canvas.is_empty():
@@ -55,6 +85,9 @@ class DrawingSaveCoordinator:
             )
 
         snapshot = canvas.get_image(copy=True)
+        return self._save_snapshot(snapshot)
+
+    def _save_snapshot(self, snapshot: NDArray[np.uint8]) -> SaveResult:
         try:
             return self.saver.save(snapshot)
         except DrawingStorageError as error:

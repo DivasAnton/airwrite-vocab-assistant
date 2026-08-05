@@ -56,7 +56,7 @@ app/preprocessing/
 - `tests/test_handwriting_preprocessor.py`
 - `docs/sprint_8_preprocessing_test_plan.md`
 
-## Sprint 9 - Dataset Preparation
+## Sprint 9 - Dataset Preparation And Character Model Training
 
 The custom uppercase AirWrite images are validated and split with a fixed seed before training.
 
@@ -72,8 +72,51 @@ Generated files:
   contracts, empty drawings, and exact duplicates.
 - `data/manifests/dataset_report.json`: class balance and split statistics.
 
-The validator requires grayscale `28x28` PNG images and re-runs the Sprint 8 preprocessing contract.
-Original dataset images are never moved, renamed, or deleted.
+The validator requires grayscale `28x28` PNG images and verifies the Sprint 8 preprocessing
+contract. Original dataset images are never moved, renamed, or deleted. Because these custom images
+were already produced by Sprint 8, the training loader normalizes them directly and does not crop or
+resize them a second time.
+
+Install optional training dependencies:
+
+```powershell
+python -m pip install -r requirements-training.txt
+```
+
+Before training, export and manually inspect the A-Z orientation preview:
+
+```powershell
+python -m scripts.preview_dataset_samples
+```
+
+Run the baseline and CNN training workflows separately:
+
+```powershell
+python -m scripts.train_baseline_model
+python -m scripts.train_character_model
+```
+
+The CNN uses light training-only rotation, translation, and zoom; it never flips characters. The
+best validation-loss checkpoint is saved with labels, preprocessing contract, model metadata,
+metrics, confusion matrix, error analysis, probability distributions, and experiment history.
+Training never runs from `app/main.py` or during module import. See
+`SPRINT9_TRAINING_AND_GIT_GUIDE.txt` before starting a real experiment.
+
+## Sprint 10 - Character Prediction Integration
+
+Sprint 10 loads the frozen Keras model bundle once at startup and connects completed AirWrite
+canvas snapshots to local character inference. Runtime validates model and output shapes, the fixed
+A-Z label order, preprocessing configuration, and model SHA-256 before enabling prediction.
+
+- Entering `DONE` creates one canvas snapshot used for both PNG saving and prediction.
+- Holding `DONE` does not repeat either operation.
+- Press `I` to predict without saving, clearing, or changing drawing state.
+- Accepted results show Top-1 and confidence; uncertain results show descending Top-3 candidates.
+- Missing or incompatible artifacts disable prediction without disabling camera and drawing.
+- Raw camera frames are never passed to the model, saved by this workflow, or uploaded.
+
+Runtime settings are documented in `.env.example`. See `docs/model_runtime_contract.md` for the
+artifact contract and `docs/sprint_10_prediction_test_plan.md` for manual verification.
 
 > AI-powered vocabulary assistant using air-writing interaction.
 

@@ -1,0 +1,4 @@
+experiment_id,model_version,dataset_manifest,random_seed,augmentation,epochs_completed,best_epoch,validation_accuracy,test_accuracy,macro_f1,model_path,timestamp,notes
+exp_custom_001,0.1.0,data/manifests/dataset_splits.csv,42,True,8,3,0.0357142873108387,0.03571428571428571,0.0028490028490028487,artifacts/models/character_recognizer.keras,2026-08-05T02:34:40.197460+00:00,Custom AirWrite uppercase A-Z
+exp_custom_001,0.1.0,data/manifests/dataset_splits.csv,42,True,7,2,0.040816325694322586,0.05612244897959184,0.018084974606713735,artifacts/models/character_recognizer.keras,2026-08-05T03:23:18.509513+00:00,Custom AirWrite uppercase A-Z
+exp_light_aug_002,0.1.0,data/manifests/dataset_splits.csv,42,True,50,50,0.8163265585899353,0.7908163265306123,0.77384614439568,artifacts/models/character_recognizer.keras,2026-08-05T03:27:26.720970+00:00,Custom AirWrite uppercase A-Z
