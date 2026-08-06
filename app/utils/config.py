@@ -6,6 +6,8 @@ from typing import cast
 
 from dotenv import load_dotenv
 
+from app.inference.character_case_mode import CharacterCaseMode
+
 load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -113,15 +115,36 @@ class Settings:
     clear_canvas_after_save: bool = env_to_bool("CLEAR_CANVAS_AFTER_SAVE", False)
     show_save_status: bool = env_to_bool("SHOW_SAVE_STATUS", True)
     save_status_display_ms: int = int(os.getenv("SAVE_STATUS_DISPLAY_MS", "2000"))
-    preprocess_output_width: int = int(os.getenv("PREPROCESS_OUTPUT_WIDTH", "28"))
-    preprocess_output_height: int = int(os.getenv("PREPROCESS_OUTPUT_HEIGHT", "28"))
-    preprocess_content_width: int = int(os.getenv("PREPROCESS_CONTENT_WIDTH", "20"))
-    preprocess_content_height: int = int(os.getenv("PREPROCESS_CONTENT_HEIGHT", "20"))
-    preprocess_binary_threshold: int = int(os.getenv("PREPROCESS_BINARY_THRESHOLD", "20"))
-    preprocess_crop_padding: int = int(os.getenv("PREPROCESS_CROP_PADDING", "8"))
-    preprocess_min_foreground_pixels: int = int(os.getenv("PREPROCESS_MIN_FOREGROUND_PIXELS", "10"))
-    preprocess_invert_input: bool = env_to_bool("PREPROCESS_INVERT_INPUT", False)
-    preprocess_center_of_mass: bool = env_to_bool("PREPROCESS_CENTER_OF_MASS", False)
+    preprocess_output_width: int = int(
+        os.getenv("MODEL_INPUT_WIDTH", os.getenv("PREPROCESS_OUTPUT_WIDTH", "28"))
+    )
+    preprocess_output_height: int = int(
+        os.getenv("MODEL_INPUT_HEIGHT", os.getenv("PREPROCESS_OUTPUT_HEIGHT", "28"))
+    )
+    preprocess_content_width: int = int(
+        os.getenv("AIRWRITE_CONTENT_WIDTH", os.getenv("PREPROCESS_CONTENT_WIDTH", "20"))
+    )
+    preprocess_content_height: int = int(
+        os.getenv("AIRWRITE_CONTENT_HEIGHT", os.getenv("PREPROCESS_CONTENT_HEIGHT", "20"))
+    )
+    preprocess_binary_threshold: int = int(
+        os.getenv("AIRWRITE_BINARY_THRESHOLD", os.getenv("PREPROCESS_BINARY_THRESHOLD", "20"))
+    )
+    preprocess_crop_padding: int = int(
+        os.getenv("AIRWRITE_CROP_PADDING", os.getenv("PREPROCESS_CROP_PADDING", "8"))
+    )
+    preprocess_min_foreground_pixels: int = int(
+        os.getenv(
+            "AIRWRITE_MIN_FOREGROUND_PIXELS",
+            os.getenv("PREPROCESS_MIN_FOREGROUND_PIXELS", "10"),
+        )
+    )
+    preprocess_invert_input: bool = env_to_bool(
+        "AIRWRITE_INVERT_INPUT", env_to_bool("PREPROCESS_INVERT_INPUT", False)
+    )
+    preprocess_center_of_mass: bool = env_to_bool(
+        "AIRWRITE_CENTER_OF_MASS", env_to_bool("PREPROCESS_CENTER_OF_MASS", False)
+    )
     save_preprocess_debug_images: bool = env_to_bool("SAVE_PREPROCESS_DEBUG_IMAGES", False)
     preprocess_debug_output_dir: Path = PROJECT_ROOT / os.getenv(
         "PREPROCESS_DEBUG_OUTPUT_DIR", "data/preprocessed_debug"
@@ -133,6 +156,7 @@ class Settings:
     )
     dataset_capture_image_format: str = os.getenv("DATASET_CAPTURE_IMAGE_FORMAT", "png")
     dataset_capture_filename_prefix: str = os.getenv("DATASET_CAPTURE_FILENAME_PREFIX", "airwrite")
+    dataset_capture_writing_style: str = os.getenv("DATASET_CAPTURE_WRITING_STYLE", "uppercase")
     dataset_capture_initial_label: str = os.getenv("DATASET_CAPTURE_INITIAL_LABEL", "A")
     dataset_capture_save_key: str = os.getenv("DATASET_CAPTURE_SAVE_KEY", "v")
     dataset_capture_next_label_key: str = os.getenv("DATASET_CAPTURE_NEXT_LABEL_KEY", "]")
@@ -268,12 +292,15 @@ class Settings:
             raise ValueError("DATASET_CAPTURE_IMAGE_FORMAT must be png")
         if not self.dataset_capture_filename_prefix.strip():
             raise ValueError("DATASET_CAPTURE_FILENAME_PREFIX must not be empty")
-        normalized_initial_label = self.dataset_capture_initial_label.strip().upper()
+        writing_style = self.dataset_capture_writing_style.strip().lower()
+        if writing_style not in {"uppercase", "lowercase"}:
+            raise ValueError("DATASET_CAPTURE_WRITING_STYLE must be uppercase or lowercase")
+        normalized_initial_label = self.dataset_capture_initial_label.strip()
         if (
             len(normalized_initial_label) != 1
-            or normalized_initial_label not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            or normalized_initial_label.lower() not in "abcdefghijklmnopqrstuvwxyz"
         ):
-            raise ValueError("DATASET_CAPTURE_INITIAL_LABEL must be A-Z")
+            raise ValueError("DATASET_CAPTURE_INITIAL_LABEL must be one letter from A-Z or a-z")
         capture_keys = {
             self.dataset_capture_save_key.lower(),
             self.dataset_capture_next_label_key.lower(),
@@ -304,6 +331,9 @@ class Settings:
             "foreground": "light",
             "normalized_min": 0.0,
             "normalized_max": 1.0,
+            "normalization_divisor": preprocessing_alignment_settings.normalization_divisor,
+            "source": "AIRWRITE_CANVAS",
+            "orientation_transform": "none",
             "content_width": self.preprocess_content_width,
             "content_height": self.preprocess_content_height,
             "binary_threshold": self.preprocess_binary_threshold,
@@ -312,6 +342,40 @@ class Settings:
             "invert_input": self.preprocess_invert_input,
             "center_of_mass": self.preprocess_center_of_mass,
         }
+
+
+@dataclass
+class PreprocessingAlignmentSettings:
+    input_width: int = int(os.getenv("MODEL_INPUT_WIDTH", "28"))
+    input_height: int = int(os.getenv("MODEL_INPUT_HEIGHT", "28"))
+    input_channels: int = int(os.getenv("MODEL_INPUT_CHANNELS", "1"))
+    background_value: int = int(os.getenv("MODEL_INPUT_BACKGROUND_VALUE", "0"))
+    normalization_divisor: float = env_to_float("MODEL_INPUT_NORMALIZATION_DIVISOR", 255.0)
+    emnist_data_dir: Path = PROJECT_ROOT / os.getenv("EMNIST_DATA_DIR", "data/external/emnist")
+    emnist_dataset_name: str = os.getenv("EMNIST_DATASET_NAME", "emnist/letters")
+    emnist_transpose_images: bool = env_to_bool("EMNIST_TRANSPOSE_IMAGES", True)
+    emnist_preserve_grayscale: bool = env_to_bool("EMNIST_PRESERVE_GRAYSCALE", True)
+    audit_samples_per_class: int = int(os.getenv("PREPROCESS_AUDIT_SAMPLES_PER_CLASS", "10"))
+    audit_output_dir: Path = PROJECT_ROOT / os.getenv(
+        "PREPROCESS_AUDIT_OUTPUT_DIR", "artifacts/preprocessing_audit"
+    )
+    save_audit_images: bool = env_to_bool("SAVE_PREPROCESS_AUDIT_IMAGES", False)
+
+    def validate(self) -> None:
+        if self.input_width <= 0 or self.input_height <= 0:
+            raise ValueError("MODEL_INPUT_WIDTH and MODEL_INPUT_HEIGHT must be greater than 0")
+        if self.input_channels != 1:
+            raise ValueError("MODEL_INPUT_CHANNELS must be 1")
+        if not 0 <= self.background_value <= 255:
+            raise ValueError("MODEL_INPUT_BACKGROUND_VALUE must be between 0 and 255")
+        if self.normalization_divisor <= 0.0:
+            raise ValueError("MODEL_INPUT_NORMALIZATION_DIVISOR must be greater than 0")
+        if not self.emnist_dataset_name.strip():
+            raise ValueError("EMNIST_DATASET_NAME must not be empty")
+        if not self.emnist_preserve_grayscale:
+            raise ValueError("EMNIST_PRESERVE_GRAYSCALE must remain true in Sprint 8E")
+        if self.audit_samples_per_class <= 0:
+            raise ValueError("PREPROCESS_AUDIT_SAMPLES_PER_CLASS must be greater than 0")
 
 
 @dataclass
@@ -436,19 +500,91 @@ class TrainingSettings:
 
 
 @dataclass
+class EMNISTTrainingSettings:
+    data_root: Path = PROJECT_ROOT / os.getenv(
+        "EMNIST_OFFICIAL_DATA_DIR", "data/external/emnist/gzip"
+    )
+    artifact_root: Path = PROJECT_ROOT / os.getenv(
+        "EMNIST_ARTIFACT_ROOT", "artifacts/emnist_letters_identity/v1"
+    )
+    airwrite_eval_manifest: Path = PROJECT_ROOT / os.getenv(
+        "AIRWRITE_IDENTITY_EVAL_MANIFEST", "data/airwrite_identity_eval/manifest.csv"
+    )
+    source: str = os.getenv("EMNIST_SOURCE", "official_idx")
+    raw_label_min: int = int(os.getenv("EMNIST_RAW_LABEL_MIN", "1"))
+    raw_label_max: int = int(os.getenv("EMNIST_RAW_LABEL_MAX", "26"))
+    validation_ratio: float = env_to_float("EMNIST_VALIDATION_RATIO", 0.10)
+    random_seed: int = int(os.getenv("EMNIST_RANDOM_SEED", "42"))
+    batch_size: int = int(os.getenv("EMNIST_BATCH_SIZE", "128"))
+    shuffle_buffer: int = int(os.getenv("EMNIST_SHUFFLE_BUFFER", "20000"))
+    cache_dataset: bool = env_to_bool("EMNIST_CACHE_DATASET", False)
+    prefetch_dataset: bool = env_to_bool("EMNIST_PREFETCH_DATASET", True)
+    max_epochs: int = int(os.getenv("EMNIST_MAX_EPOCHS", "50"))
+    learning_rate: float = env_to_float("EMNIST_LEARNING_RATE", 0.001)
+    early_stopping_patience: int = int(os.getenv("EMNIST_EARLY_STOPPING_PATIENCE", "5"))
+    reduce_lr_patience: int = int(os.getenv("EMNIST_REDUCE_LR_PATIENCE", "3"))
+    dropout_rate: float = env_to_float("EMNIST_DROPOUT_RATE", 0.30)
+    rotation_factor: float = env_to_float("EMNIST_ROTATION_FACTOR", 0.03)
+    translation_factor: float = env_to_float("EMNIST_TRANSLATION_FACTOR", 0.08)
+    zoom_factor: float = env_to_float("EMNIST_ZOOM_FACTOR", 0.08)
+    model_version: str = os.getenv("EMNIST_MODEL_VERSION", "1.0.0")
+
+    @property
+    def train_images_path(self) -> Path:
+        return self.data_root / os.getenv(
+            "EMNIST_TRAIN_IMAGES_FILE", "emnist-letters-train-images-idx3-ubyte.gz"
+        )
+
+    @property
+    def train_labels_path(self) -> Path:
+        return self.data_root / os.getenv(
+            "EMNIST_TRAIN_LABELS_FILE", "emnist-letters-train-labels-idx1-ubyte.gz"
+        )
+
+    @property
+    def test_images_path(self) -> Path:
+        return self.data_root / os.getenv(
+            "EMNIST_TEST_IMAGES_FILE", "emnist-letters-test-images-idx3-ubyte.gz"
+        )
+
+    @property
+    def test_labels_path(self) -> Path:
+        return self.data_root / os.getenv(
+            "EMNIST_TEST_LABELS_FILE", "emnist-letters-test-labels-idx1-ubyte.gz"
+        )
+
+    @property
+    def split_indices_path(self) -> Path:
+        return self.artifact_root / "split_indices.npz"
+
+    def experiment_root(self, experiment_id: str) -> Path:
+        normalized = experiment_id.strip().upper()
+        if normalized not in {"E01", "E02", "SMOKE"}:
+            raise ValueError("experiment_id must be E01, E02, or SMOKE")
+        return self.artifact_root / "experiments" / normalized
+
+    def validate(self) -> None:
+        if self.source != "official_idx":
+            raise ValueError("EMNIST_SOURCE must be official_idx")
+        if (self.raw_label_min, self.raw_label_max) != (1, 26):
+            raise ValueError("EMNIST raw label contract must remain 1-26")
+        if not 0.0 < self.validation_ratio < 1.0:
+            raise ValueError("EMNIST_VALIDATION_RATIO must be between 0 and 1")
+        if self.batch_size <= 0 or self.shuffle_buffer <= 0 or self.max_epochs <= 0:
+            raise ValueError("EMNIST batch, shuffle buffer, and epochs must be positive")
+        if self.learning_rate <= 0.0:
+            raise ValueError("EMNIST_LEARNING_RATE must be positive")
+        if self.early_stopping_patience < 0 or self.reduce_lr_patience < 0:
+            raise ValueError("EMNIST callback patience values must be non-negative")
+        if not 0.0 <= self.dropout_rate < 1.0:
+            raise ValueError("EMNIST_DROPOUT_RATE must be between 0 and 1")
+        factors = (self.rotation_factor, self.translation_factor, self.zoom_factor)
+        if any(factor < 0.0 or factor >= 1.0 for factor in factors):
+            raise ValueError("EMNIST augmentation factors must be between 0 and 1")
+
+
+@dataclass
 class InferenceSettings:
-    model_path: Path = PROJECT_ROOT / os.getenv(
-        "CHARACTER_MODEL_PATH", "artifacts/models/character_recognizer.keras"
-    )
-    labels_path: Path = PROJECT_ROOT / os.getenv(
-        "CHARACTER_LABELS_PATH", "artifacts/labels/labels.json"
-    )
-    metadata_path: Path = PROJECT_ROOT / os.getenv(
-        "MODEL_METADATA_PATH", "artifacts/metadata/model_metadata.json"
-    )
-    preprocessing_config_path: Path = PROJECT_ROOT / os.getenv(
-        "MODEL_PREPROCESSING_CONFIG_PATH", "artifacts/metadata/preprocessing_config.json"
-    )
     top_k: int = int(os.getenv("PREDICTION_TOP_K", "3"))
     min_confidence: float = env_to_float("PREDICTION_MIN_CONFIDENCE", 0.60)
     min_margin: float = env_to_float("PREDICTION_MIN_MARGIN", 0.15)
@@ -462,14 +598,6 @@ class InferenceSettings:
     latency_warning_ms: int = int(os.getenv("PREDICTION_LATENCY_WARNING_MS", "500"))
 
     def validate(self, num_classes: int = 26) -> None:
-        for name, path in (
-            ("CHARACTER_MODEL_PATH", self.model_path),
-            ("CHARACTER_LABELS_PATH", self.labels_path),
-            ("MODEL_METADATA_PATH", self.metadata_path),
-            ("MODEL_PREPROCESSING_CONFIG_PATH", self.preprocessing_config_path),
-        ):
-            if not str(path).strip():
-                raise ValueError(f"{name} must not be empty")
         if not 0 < self.top_k <= num_classes:
             raise ValueError(f"PREDICTION_TOP_K must be between 1 and {num_classes}")
         validate_confidence("PREDICTION_MIN_CONFIDENCE", self.min_confidence)
@@ -482,6 +610,236 @@ class InferenceSettings:
             raise ValueError("PREDICTION_LATENCY_WARNING_MS must be greater than 0")
 
 
+@dataclass
+class IdentityModelSettings:
+    model_path: Path = PROJECT_ROOT / os.getenv(
+        "IDENTITY_MODEL_PATH", "artifacts/emnist_letters_identity/v1/model.keras"
+    )
+    identity_labels_path: Path = PROJECT_ROOT / os.getenv(
+        "IDENTITY_LABELS_PATH", "artifacts/emnist_letters_identity/v1/identity_labels.json"
+    )
+    lowercase_display_labels_path: Path = PROJECT_ROOT / os.getenv(
+        "LOWERCASE_DISPLAY_LABELS_PATH",
+        "artifacts/emnist_letters_identity/v1/lowercase_display_labels.json",
+    )
+    uppercase_display_labels_path: Path = PROJECT_ROOT / os.getenv(
+        "UPPERCASE_DISPLAY_LABELS_PATH",
+        "artifacts/emnist_letters_identity/v1/uppercase_display_labels.json",
+    )
+    metadata_path: Path = PROJECT_ROOT / os.getenv(
+        "IDENTITY_MODEL_METADATA_PATH",
+        "artifacts/emnist_letters_identity/v1/model_metadata.json",
+    )
+    preprocessing_config_path: Path = PROJECT_ROOT / os.getenv(
+        "IDENTITY_PREPROCESSING_CONFIG_PATH",
+        "artifacts/emnist_letters_identity/v1/preprocessing_config.json",
+    )
+
+    def validate(self) -> None:
+        for name, path in (
+            ("IDENTITY_MODEL_PATH", self.model_path),
+            ("IDENTITY_LABELS_PATH", self.identity_labels_path),
+            ("LOWERCASE_DISPLAY_LABELS_PATH", self.lowercase_display_labels_path),
+            ("UPPERCASE_DISPLAY_LABELS_PATH", self.uppercase_display_labels_path),
+            ("IDENTITY_MODEL_METADATA_PATH", self.metadata_path),
+            ("IDENTITY_PREPROCESSING_CONFIG_PATH", self.preprocessing_config_path),
+        ):
+            if not str(path).strip():
+                raise ValueError(f"{name} must not be empty")
+
+
+@dataclass
+class CaseControlSettings:
+    default_mode: CharacterCaseMode = CharacterCaseMode.from_string(
+        os.getenv("DEFAULT_CHARACTER_CASE_MODE", "lowercase")
+    )
+    lowercase_mode_key: str = os.getenv("LOWERCASE_MODE_KEY", "l")
+    uppercase_mode_key: str = os.getenv("UPPERCASE_MODE_KEY", "u")
+    shift_next_key: str = os.getenv("SHIFT_NEXT_KEY", "y")
+    cancel_shift_key: str = os.getenv("CANCEL_SHIFT_KEY", "z")
+    enable_auto_case_mode: bool = env_to_bool("ENABLE_AUTO_CASE_MODE", False)
+    show_case_mode: bool = env_to_bool("SHOW_CHARACTER_CASE_MODE", True)
+    show_case_debug: bool = env_to_bool("SHOW_CASE_INFERENCE_DEBUG", False)
+    status_display_ms: int = int(os.getenv("CASE_STATUS_DISPLAY_MS", "3000"))
+
+    def validate(self) -> None:
+        keys = {
+            "LOWERCASE_MODE_KEY": self.lowercase_mode_key,
+            "UPPERCASE_MODE_KEY": self.uppercase_mode_key,
+            "SHIFT_NEXT_KEY": self.shift_next_key,
+            "CANCEL_SHIFT_KEY": self.cancel_shift_key,
+        }
+        if any(len(value) != 1 for value in keys.values()):
+            raise ValueError("Case control keys must contain exactly one character")
+        normalized = [value.lower() for value in keys.values()]
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("Case control keys must be distinct")
+        if self.enable_auto_case_mode:
+            raise ValueError("ENABLE_AUTO_CASE_MODE must remain false for the identity model")
+        if self.status_display_ms < 0:
+            raise ValueError("CASE_STATUS_DISPLAY_MS must be greater than or equal to 0")
+
+
+@dataclass
+class WordBuilderSettings:
+    max_length: int = int(os.getenv("WORD_MAX_LENGTH", "30"))
+    canonicalization: str = os.getenv("WORD_CANONICALIZATION", "casefold")
+    auto_append_accepted: bool = env_to_bool("WORD_AUTO_APPEND_ACCEPTED", True)
+    require_selection_for_uncertain: bool = env_to_bool(
+        "WORD_REQUIRE_SELECTION_FOR_UNCERTAIN", True
+    )
+    candidate_1_key: str = os.getenv("WORD_SELECT_CANDIDATE_1_KEY", "1")
+    candidate_2_key: str = os.getenv("WORD_SELECT_CANDIDATE_2_KEY", "2")
+    candidate_3_key: str = os.getenv("WORD_SELECT_CANDIDATE_3_KEY", "3")
+    cancel_pending_key: str = os.getenv("WORD_CANCEL_PENDING_KEY", "x")
+    backspace_key: str = os.getenv("WORD_BACKSPACE_KEY", "b")
+    clear_word_key: str = os.getenv("WORD_CLEAR_KEY", "k")
+    confirm_key: str = os.getenv("WORD_CONFIRM_KEY", "enter")
+    new_word_key: str = os.getenv("WORD_NEW_KEY", "n")
+    auto_clear_after_commit: bool = env_to_bool("AUTO_CLEAR_CANVAS_AFTER_CHARACTER", True)
+    auto_clear_after_pending_cancel: bool = env_to_bool(
+        "AUTO_CLEAR_CANVAS_AFTER_PENDING_CANCEL", True
+    )
+    show_word_builder: bool = env_to_bool("SHOW_WORD_BUILDER", True)
+    show_pending_candidates: bool = env_to_bool("SHOW_PENDING_CANDIDATES", True)
+    status_display_ms: int = int(os.getenv("WORD_STATUS_DISPLAY_MS", "3000"))
+
+    def validate(self) -> None:
+        if self.max_length <= 0:
+            raise ValueError("WORD_MAX_LENGTH must be greater than 0")
+        if self.canonicalization.strip().lower() != "casefold":
+            raise ValueError("WORD_CANONICALIZATION must be casefold")
+        single_character_keys = {
+            "WORD_SELECT_CANDIDATE_1_KEY": self.candidate_1_key,
+            "WORD_SELECT_CANDIDATE_2_KEY": self.candidate_2_key,
+            "WORD_SELECT_CANDIDATE_3_KEY": self.candidate_3_key,
+            "WORD_CANCEL_PENDING_KEY": self.cancel_pending_key,
+            "WORD_BACKSPACE_KEY": self.backspace_key,
+            "WORD_CLEAR_KEY": self.clear_word_key,
+            "WORD_NEW_KEY": self.new_word_key,
+        }
+        if any(len(value) != 1 for value in single_character_keys.values()):
+            raise ValueError("Word Builder action keys must contain exactly one character")
+        normalized_keys = [value.lower() for value in single_character_keys.values()]
+        if len(set(normalized_keys)) != len(normalized_keys):
+            raise ValueError("Word Builder action keys must be distinct")
+        normalized_confirm = self.confirm_key.strip().lower()
+        if normalized_confirm != "enter" and len(normalized_confirm) != 1:
+            raise ValueError("WORD_CONFIRM_KEY must be 'enter' or one character")
+        if normalized_confirm in normalized_keys:
+            raise ValueError("WORD_CONFIRM_KEY must not conflict with another Word Builder key")
+        if self.status_display_ms < 0:
+            raise ValueError("WORD_STATUS_DISPLAY_MS must be greater than or equal to 0")
+
+
+@dataclass(frozen=True)
+class WholeWordSettings:
+    default_input_mode: str = os.getenv("DEFAULT_DRAWING_INPUT_MODE", "character")
+    character_mode_key: str = os.getenv("CHARACTER_MODE_KEY", "r")
+    word_mode_key: str = os.getenv("WORD_MODE_KEY", "w")
+    min_characters: int = int(os.getenv("WHOLE_WORD_MIN_CHARACTERS", "2"))
+    max_characters: int = int(os.getenv("WHOLE_WORD_MAX_CHARACTERS", "12"))
+    max_strokes: int = int(os.getenv("WHOLE_WORD_MAX_STROKES", "64"))
+    max_points_per_stroke: int = int(os.getenv("WHOLE_WORD_MAX_POINTS_PER_STROKE", "1000"))
+    roi_x_ratio: float = env_to_float("WORD_ROI_X_RATIO", 0.05)
+    roi_y_ratio: float = env_to_float("WORD_ROI_Y_RATIO", 0.20)
+    roi_width_ratio: float = env_to_float("WORD_ROI_WIDTH_RATIO", 0.90)
+    roi_height_ratio: float = env_to_float("WORD_ROI_HEIGHT_RATIO", 0.60)
+    min_foreground_pixels: int = int(os.getenv("WORD_SEGMENT_MIN_FOREGROUND_PIXELS", "10"))
+    min_component_area: int = int(os.getenv("WORD_SEGMENT_MIN_COMPONENT_AREA", "4"))
+    min_separator_gap: int = int(os.getenv("WORD_SEGMENT_MIN_SEPARATOR_GAP", "10"))
+    max_internal_gap: int = int(os.getenv("WORD_SEGMENT_MAX_INTERNAL_GAP", "16"))
+    x_overlap_threshold: float = env_to_float("WORD_SEGMENT_X_OVERLAP_THRESHOLD", 0.25)
+    tiny_component_ratio: float = env_to_float("WORD_SEGMENT_TINY_COMPONENT_RATIO", 0.20)
+    wide_group_ratio: float = env_to_float("WORD_SEGMENT_WIDE_GROUP_RATIO", 1.80)
+    top_k: int = int(os.getenv("WHOLE_WORD_TOP_K", "3"))
+    min_confidence: float = env_to_float("WHOLE_WORD_MIN_CONFIDENCE", 0.60)
+    min_margin: float = env_to_float("WHOLE_WORD_MIN_MARGIN", 0.15)
+    default_case_policy: str = os.getenv("DEFAULT_WORD_CASE_POLICY", "lowercase")
+    case_lowercase_key: str = os.getenv("WORD_CASE_LOWERCASE_KEY", "l")
+    case_uppercase_key: str = os.getenv("WORD_CASE_UPPERCASE_KEY", "u")
+    case_capitalize_key: str = os.getenv("WORD_CASE_CAPITALIZE_KEY", "p")
+    case_custom_key: str = os.getenv("WORD_CASE_CUSTOM_KEY", "o")
+    previous_position_key: str = os.getenv("WORD_PREVIOUS_POSITION_KEY", "[")
+    next_position_key: str = os.getenv("WORD_NEXT_POSITION_KEY", "]")
+    toggle_case_key: str = os.getenv("WORD_TOGGLE_SELECTED_CASE_KEY", "g")
+    split_segment_key: str = os.getenv("WORD_SPLIT_SELECTED_SEGMENT_KEY", "s")
+    merge_segment_key: str = os.getenv("WORD_MERGE_SELECTED_WITH_NEXT_KEY", "v")
+    accept_draft_key: str = os.getenv("WORD_ACCEPT_DRAFT_KEY", "a")
+    cancel_draft_key: str = os.getenv("WORD_CANCEL_DRAFT_KEY", "x")
+    audit_dir: Path = PROJECT_ROOT / os.getenv(
+        "WORD_SEGMENT_AUDIT_DIR", "artifacts/word_segmentation_audit"
+    )
+    save_audit_images: bool = env_to_bool("SAVE_WORD_SEGMENT_AUDIT_IMAGES", False)
+    show_roi: bool = env_to_bool("SHOW_WORD_ROI", True)
+    show_segment_boxes: bool = env_to_bool("SHOW_WORD_SEGMENT_BOXES", True)
+    show_segmentation_confidence: bool = env_to_bool("SHOW_WORD_SEGMENT_CONFIDENCE", False)
+    show_prediction_confidence: bool = env_to_bool("SHOW_WORD_PREDICTION_CONFIDENCE", True)
+
+    def validate(self) -> None:
+        if self.default_input_mode.strip().upper() not in {"CHARACTER", "ISOLATED_WORD", "WORD"}:
+            raise ValueError("DEFAULT_DRAWING_INPUT_MODE must be character or isolated_word")
+        if not 2 <= self.min_characters <= self.max_characters <= 26:
+            raise ValueError("Whole-word character limits must satisfy 2 <= min <= max <= 26")
+        if self.max_strokes <= 0 or self.max_points_per_stroke <= 0:
+            raise ValueError("Whole-word stroke and point limits must be positive")
+        ratios = (
+            self.roi_x_ratio,
+            self.roi_y_ratio,
+            self.roi_width_ratio,
+            self.roi_height_ratio,
+        )
+        if any(value < 0.0 or value > 1.0 for value in ratios):
+            raise ValueError("Word ROI ratios must be between 0 and 1")
+        if self.roi_width_ratio <= 0.0 or self.roi_height_ratio <= 0.0:
+            raise ValueError("Word ROI width and height ratios must be positive")
+        if self.roi_x_ratio + self.roi_width_ratio > 1.0:
+            raise ValueError("Word ROI exceeds frame width")
+        if self.roi_y_ratio + self.roi_height_ratio > 1.0:
+            raise ValueError("Word ROI exceeds frame height")
+        positive_values = (
+            self.min_foreground_pixels,
+            self.min_component_area,
+            self.min_separator_gap,
+            self.max_internal_gap,
+        )
+        if any(value <= 0 for value in positive_values):
+            raise ValueError("Whole-word segmentation pixel settings must be positive")
+        if not 0.0 <= self.x_overlap_threshold <= 1.0:
+            raise ValueError("WORD_SEGMENT_X_OVERLAP_THRESHOLD must be between 0 and 1")
+        if not 0.0 < self.tiny_component_ratio <= 1.0:
+            raise ValueError("WORD_SEGMENT_TINY_COMPONENT_RATIO must be between 0 and 1")
+        if self.wide_group_ratio <= 1.0:
+            raise ValueError("WORD_SEGMENT_WIDE_GROUP_RATIO must be greater than 1")
+        if not 1 <= self.top_k <= 26:
+            raise ValueError("WHOLE_WORD_TOP_K must be between 1 and 26")
+        validate_confidence("WHOLE_WORD_MIN_CONFIDENCE", self.min_confidence)
+        validate_confidence("WHOLE_WORD_MIN_MARGIN", self.min_margin)
+        keys = (
+            self.character_mode_key,
+            self.word_mode_key,
+            self.case_lowercase_key,
+            self.case_uppercase_key,
+            self.case_capitalize_key,
+            self.case_custom_key,
+            self.previous_position_key,
+            self.next_position_key,
+            self.toggle_case_key,
+            self.split_segment_key,
+            self.merge_segment_key,
+            self.accept_draft_key,
+            self.cancel_draft_key,
+        )
+        if any(len(key) != 1 for key in keys):
+            raise ValueError("Whole-word control keys must contain one character")
+
+
 settings = Settings()
+preprocessing_alignment_settings = PreprocessingAlignmentSettings()
 training_settings = TrainingSettings()
+emnist_training_settings = EMNISTTrainingSettings()
 inference_settings = InferenceSettings()
+identity_model_settings = IdentityModelSettings()
+case_control_settings = CaseControlSettings()
+word_builder_settings = WordBuilderSettings()
+whole_word_settings = WholeWordSettings()

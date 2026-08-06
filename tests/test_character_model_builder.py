@@ -33,3 +33,18 @@ def test_builder_creates_expected_input_and_output_shapes() -> None:
     assert model.output_shape == (None, 26)
     assert model.output_shape[-1] == 26
     assert model.layers[-1].activation.__name__ == "softmax"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("tensorflow") is None, reason="TensorFlow not installed"
+)
+def test_builder_supports_emnist_identity_architecture() -> None:
+    model = CharacterModelBuilder(
+        augmentation_config=AugmentationConfig(enabled=False),
+        use_batch_normalization=True,
+        dense_units=128,
+        dropout_rate=0.30,
+    ).build()
+    layer_names = [layer.__class__.__name__ for layer in model.layers]
+    assert layer_names.count("BatchNormalization") == 3
+    assert model.output_shape == (None, 26)

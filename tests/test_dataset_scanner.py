@@ -36,3 +36,12 @@ def test_scanner_reports_unknown_and_missing_label_directories(tmp_path: Path) -
     error_types = {issue.error_type for issue in scanner.issues}
     assert "invalid_label_directory" in error_types
     assert "missing_label_directory" in error_types
+
+
+def test_uppercase_scanner_ignores_lowercase_capture_root(tmp_path: Path) -> None:
+    (tmp_path / "lowercase" / "a").mkdir(parents=True)
+
+    scanner = DatasetScanner(tmp_path)
+    scanner.scan()
+
+    assert all(issue.image_path.name != "lowercase" for issue in scanner.issues)

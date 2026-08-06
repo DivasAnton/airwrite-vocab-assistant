@@ -1,11 +1,12 @@
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from app.ml.dataset_manifest import DatasetManifestEntry
 from app.ml.exceptions import ModelEvaluationError
-from app.ml.labels import CHARACTER_LABELS, index_to_label
+from app.ml.labels import CHARACTER_LABELS
 from app.ml.training_data_loader import TrainingDataLoader
 
 
@@ -41,6 +42,11 @@ class EvaluationResult:
 
 
 class ModelEvaluator:
+    def __init__(self, labels: tuple[str, ...] = CHARACTER_LABELS) -> None:
+        if len(labels) < 2 or len(set(labels)) != len(labels):
+            raise ValueError("Evaluation labels must contain unique class names")
+        self.labels = labels
+
     def evaluate_model(
         self,
         model: object,
@@ -81,6 +87,52 @@ class ModelEvaluator:
             sources=[entry.source for entry in ordered_entries],
         )
 
+    def evaluate_dataset(self, model: object, dataset: Any) -> EvaluationResult:
+        predict_on_batch = getattr(model, "predict_on_batch", None)
+        if not callable(predict_on_batch):
+            raise ModelEvaluationError("Model must provide a callable predict_on_batch method")
+        probability_batches: list[NDArray[np.float32]] = []
+        label_batches: list[NDArray[np.int64]] = []
+        for images, labels in dataset:
+            probability_batches.append(np.asarray(predict_on_batch(images), dtype=np.float32))
+            label_batches.append(np.asarray(labels, dtype=np.int64))
+        if not probability_batches:
+            raise ModelEvaluationError("Evaluation dataset must not be empty")
+        probabilities = np.concatenate(probability_batches)
+        y_true = np.concatenate(label_batches)
+        clipped = np.clip(probabilities[np.arange(len(y_true)), y_true], 1e-7, 1.0)
+        result = self.evaluate_predictions(
+            y_true,
+            probabilities,
+            test_loss=float(-np.log(clipped).mean()),
+        )
+        y_pred = np.argmax(probabilities, axis=1)
+        errors: list[dict[str, object]] = []
+        for index in np.flatnonzero(y_pred != y_true):
+            top_indices = np.argsort(probabilities[index])[-3:][::-1]
+            errors.append(
+                {
+                    "image_path": f"dataset_sample:{int(index)}",
+                    "true_label": self.labels[int(y_true[index])],
+                    "predicted_label": self.labels[int(y_pred[index])],
+                    "confidence": float(probabilities[index, y_pred[index]]),
+                    "top_3": [
+                        {
+                            "label": self.labels[int(class_index)],
+                            "probability": float(probabilities[index, class_index]),
+                        }
+                        for class_index in top_indices
+                    ],
+                    "source": "dataset",
+                }
+            )
+        return replace(
+            result,
+            error_analysis=errors,
+            probabilities=probabilities.astype(float).tolist(),
+            true_indices=y_true.astype(int).tolist(),
+        )
+
     def evaluate_predictions(
         self,
         y_true: NDArray[np.int64],
@@ -89,7 +141,7 @@ class ModelEvaluator:
     ) -> EvaluationResult:
         self._validate_predictions(y_true, probabilities)
         y_pred = np.argmax(probabilities, axis=1).astype(np.int64)
-        confusion = self.confusion_matrix(y_true, y_pred, len(CHARACTER_LABELS))
+        confusion = self.confusion_matrix(y_true, y_pred, len(self.labels))
         per_class = self.per_class_metrics(confusion)
         precision_values = [metrics["precision"] for metrics in per_class.values()]
         recall_values = [metrics["recall"] for metrics in per_class.values()]
@@ -115,8 +167,8 @@ class ModelEvaluator:
             confusion[int(true_index), int(predicted_index)] += 1
         return confusion
 
-    @staticmethod
     def per_class_metrics(
+        self,
         confusion: NDArray[np.int64],
     ) -> dict[str, dict[str, float]]:
         metrics: dict[str, dict[str, float]] = {}
@@ -128,7 +180,7 @@ class ModelEvaluator:
             precision = ModelEvaluator._safe_divide(true_positive, true_positive + false_positive)
             recall = ModelEvaluator._safe_divide(true_positive, true_positive + false_negative)
             f1 = ModelEvaluator._safe_divide(2.0 * precision * recall, precision + recall)
-            metrics[index_to_label(index)] = {
+            metrics[self.labels[index]] = {
                 "precision": precision,
                 "recall": recall,
                 "f1": f1,
@@ -162,8 +214,8 @@ class ModelEvaluator:
             }
         return metrics
 
-    @staticmethod
     def _error_analysis(
+        self,
         entries: list[DatasetManifestEntry],
         y_true: NDArray[np.int64],
         probabilities: NDArray[np.float32],
@@ -177,12 +229,12 @@ class ModelEvaluator:
             errors.append(
                 {
                     "image_path": entry.image_path.as_posix(),
-                    "true_label": index_to_label(int(y_true[index])),
-                    "predicted_label": index_to_label(int(y_pred[index])),
+                    "true_label": self.labels[int(y_true[index])],
+                    "predicted_label": self.labels[int(y_pred[index])],
                     "confidence": float(probabilities[index, y_pred[index]]),
                     "top_3": [
                         {
-                            "label": index_to_label(int(class_index)),
+                            "label": self.labels[int(class_index)],
                             "probability": float(probabilities[index, class_index]),
                         }
                         for class_index in top_indices
@@ -192,20 +244,19 @@ class ModelEvaluator:
             )
         return errors
 
-    @staticmethod
     def _validate_predictions(
-        y_true: NDArray[np.int64], probabilities: NDArray[np.float32]
+        self, y_true: NDArray[np.int64], probabilities: NDArray[np.float32]
     ) -> None:
         if y_true.ndim != 1 or len(y_true) == 0:
             raise ModelEvaluationError("y_true must be a non-empty 1D array")
-        expected_shape = (len(y_true), len(CHARACTER_LABELS))
+        expected_shape = (len(y_true), len(self.labels))
         if probabilities.shape != expected_shape:
             raise ModelEvaluationError(
                 f"Expected probabilities shape {expected_shape}, got {probabilities.shape}"
             )
         if not np.isfinite(probabilities).all():
             raise ModelEvaluationError("Probabilities contain NaN or Inf")
-        if np.any(y_true < 0) or np.any(y_true >= len(CHARACTER_LABELS)):
+        if np.any(y_true < 0) or np.any(y_true >= len(self.labels)):
             raise ModelEvaluationError("y_true contains an invalid class index")
 
     @staticmethod

@@ -24,3 +24,23 @@ class ModelEvaluationError(RuntimeError):
 
 class ArtifactExportError(RuntimeError):
     """Raised when model metadata or artifacts cannot be exported safely."""
+
+
+class EMNISTDatasetError(DatasetError):
+    """Base exception for official EMNIST dataset failures."""
+
+
+class InvalidIDXFileError(EMNISTDatasetError):
+    """Raised when an IDX file header or payload is invalid."""
+
+
+class InvalidEMNISTLabelError(EMNISTDatasetError):
+    """Raised when an EMNIST Letters label is outside the raw 1-26 contract."""
+
+
+class InvalidEMNISTDatasetError(EMNISTDatasetError):
+    """Raised when images and labels do not satisfy the dataset contract."""
+
+
+class EMNISTSplitError(EMNISTDatasetError):
+    """Raised when a deterministic stratified split cannot be created."""

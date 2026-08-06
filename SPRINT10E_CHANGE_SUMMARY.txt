@@ -1,0 +1,94 @@
+SPRINT 10E - TOM TAT THAY DOI THEO CLASS VA DEF
+================================================
+
+TRANG THAI
+- Da tich hop model EMNIST identity E02 vao runtime, khong train lai model.
+- Automated implementation da hoan tat; manual webcam A-Z/a-z van can nguoi dung chay.
+- Khong thuc hien bat ky lenh Git commit, push, pull, switch hoac branch nao.
+- Quality: Ruff pass; 315 test pass, 1 opt-in training smoke skip; mypy pass 120 source files.
+- app.main import pass; identity bundle E02 load/validate pass.
+- Cung mot anh: confidence Top-3 giong nhau, chi render a/c/o thanh A/C/O theo mode.
+
+app/inference/character_case_mode.py - CharacterCaseMode
+- from_string(): parse lowercase/uppercase va tu choi AUTO/gia tri sai.
+- opposite(): tra mode doi nghich cho Shift-next.
+
+app/inference/case_input_state.py - CaseInputState
+- set_lowercase()/set_uppercase(): doi locked mode va huy Shift dang cho.
+- toggle_shift_next()/cancel_shift(): bat-tat hoac huy Shift-next.
+- get_effective_mode(): tinh mode hieu luc tu locked mode va Shift.
+- create_selection(): tao CaseSelection bat bien tai prediction event.
+- consume_shift_after_commit(): API danh cho Sprint 11E sau append thanh cong.
+
+app/inference/case_selection.py - CaseSelection
+- Luu mode snapshot va shift_was_active; frozen dataclass nen global mode khong sua pending result.
+
+app/inference/case_mode_controller.py - CaseModeController
+- handle(): xu ly semantic CaseAction, khong phu thuoc raw OpenCV key code.
+
+app/inference/case_label_resolver.py - CaseLabelResolver
+- validate_mappings(): kiem tra 26 identity a-z, lowercase a-z, uppercase A-Z va cung index.
+- resolve(): map class index + case mode thanh identity va rendered character.
+- resolve_candidate(): them display case vao IdentityCandidate ma khong doi confidence/rank.
+
+app/inference/identity_candidate.py - IdentityCandidate
+- Luu output model case-neutral: identity, class index, confidence va rank.
+
+app/inference/model_bundle.py - ModelBundle
+- Thay labels mo ho bang identity/lowercase/uppercase mappings.
+- Them task_type, case_sensitive va case_source.
+
+app/inference/model_bundle_loader.py - ModelBundleLoader
+- load(): load dung 6 artifact mot lan voi compile=false/safe_mode=true; khong fallback model cu.
+- _parse_labels(): validate JSON label lists.
+- _required_bool(): validate metadata boolean.
+
+app/inference/model_bundle_validator.py - ModelBundleValidator
+- validate(): bat buoc identity task, case_sensitive=false, user_selected_mode, 26 output va contract Sprint 8E.
+
+app/inference/character_predictor.py - CharacterPredictor
+- predict(): chi tra IdentityCandidate a-z; khong biet lowercase, uppercase, Shift hay Word Builder.
+
+app/inference/prediction_policy.py - PredictionPolicy
+- evaluate(): tinh ACCEPTED/UNCERTAIN va margin tren identity candidates.
+
+app/inference/character_recognition_service.py - CharacterRecognitionService
+- recognize(): preprocess, predict identity, apply policy, resolve theo CaseSelection va tao PredictionResult.
+- _failed_result(): bao loi ma van giu case snapshot va prediction ID.
+
+app/inference/completion_recognition_coordinator.py - CompletionRecognitionCoordinator
+- handle_transition(): khi vao DONE, snapshot canvas va case, save va predict dung mot lan.
+- predict_now(): manual prediction cung tao case snapshot.
+- _next_prediction_id(): tao ID rieng cho moi prediction event.
+
+app/inference/prediction_candidate.py va prediction_result.py
+- Candidate luu identity, rendered_character, case_mode; label la compatibility field.
+- Result luu CaseSelection va case_was_inferred=false; pending candidates da dong bang case.
+
+app/inference/word_builder_compatibility_guard.py - WordBuilderCompatibilityGuard
+- check(): cho uppercase vao Word Builder cu, chan lowercase ma khong ep thanh uppercase.
+
+app/inference/prediction_status_renderer.py - PredictionStatusRenderer
+- render(): hien mode, Shift-next, prediction, compatibility message va debug identity/case.
+- format_case_lines(): tao dong mode hien tai va effective mode tiep theo.
+
+app/utils/config.py
+- IdentityModelSettings.validate(): validate 6 path artifact identity.
+- CaseControlSettings.validate(): validate mode, key, AUTO=false va timeout.
+
+app/main.py
+- Load identity bundle mot lan; tao case state/controller/resolver/guard.
+- Xu ly key L/U/Y/Z, case snapshot cho DONE/I va compatibility voi Word Builder cu.
+
+SCRIPTS, TESTS VA TAI LIEU
+- inspect_identity_model_bundle.py: inspect model/metadata/mappings/contract khong camera.
+- test_case_controlled_inference.py: predict mot anh luu theo lowercase hoac uppercase mode.
+- Them 6 test file Sprint 10E va cap nhat test Sprint 10/11 theo identity contract.
+- Them plan, inference contract, manual test plan va cap nhat README.
+
+CHUA TOI UU / CAN NGUOI DUNG KIEM TRA
+- Chua chay webcam manual voi tap chu lowercase/uppercase trong manual test plan.
+- Shift chi duoc luu; reset sau append/cancel pending se hoan thien o Sprint 11E.
+- Lowercase Word Builder bi chan co chu dich den Sprint 11E.
+- Inference van synchronous va co the block camera preview tren may cham.
+- AirWrite accuracy 64.12% cho thay domain gap van con; Sprint 10E khong tune model.

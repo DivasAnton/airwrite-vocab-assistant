@@ -23,6 +23,10 @@ data/drawings/*
 data/preprocessed_debug/*
 data/raw_airwrite/*
 data/training_cache/*
+data/external/emnist/
+data/cache/emnist/
+data/airwrite_identity_eval/
+data/preprocessing_audit/
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep
@@ -33,6 +37,13 @@ data/training_cache/*
 !data/training_cache/.gitkeep
 
 artifacts/models/*
+artifacts/preprocessing_audit/
+artifacts/word_segmentation_audit/
+data/word_segmentation_eval/
+data/word_trajectory_capture/
+artifacts/emnist_letters_identity/**/model.keras
+artifacts/emnist_letters_identity/**/checkpoints/
+artifacts/emnist_letters_identity/**/tensorboard/
 !artifacts/models/.gitkeep
 
 models/*

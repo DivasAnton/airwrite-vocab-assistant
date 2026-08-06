@@ -1,0 +1,46 @@
+{
+  "model_name": "airwrite_emnist_letter_identity",
+  "model_version": "1.0.0",
+  "task_type": "letter_identity_classification",
+  "dataset": "EMNIST Letters official IDX",
+  "num_classes": 26,
+  "case_sensitive": false,
+  "case_source": "user_selected_mode",
+  "input_shape": [
+    28,
+    28,
+    1
+  ],
+  "output_labels": "identity_labels.json",
+  "experiment_id": "E02",
+  "augmentation": "light",
+  "random_seed": 42,
+  "best_epoch": 10,
+  "validation_loss": 0.1556972861289978,
+  "validation_accuracy": 0.9488782286643982,
+  "validation_top_3_accuracy": 0.9956730604171753,
+  "validation_macro_f1": 0.9489298339605073,
+  "trained_at": "2026-08-05T09:21:29.986283+00:00",
+  "official_test_evaluated": true,
+  "selected_experiment": "E02",
+  "official_test_accuracy": 0.94375,
+  "official_test_macro_f1": 0.9437948143179644,
+  "official_test_top_3_accuracy": 0.995,
+  "airwrite_evaluation": {
+    "manifest": "C:\\Code\\airwrite-vocab-assistant\\data\\airwrite_identity_eval\\manifest.csv",
+    "sample_count": 1600,
+    "accuracy": 0.64125,
+    "macro_f1": 0.6439139845356204,
+    "top_3_accuracy": 0.815,
+    "writing_style_metrics": {
+      "lowercase": {
+        "accuracy": 0.7278911564625851,
+        "sample_count": 294.0
+      },
+      "uppercase": {
+        "accuracy": 0.6217457886676876,
+        "sample_count": 1306.0
+      }
+    }
+  }
+}

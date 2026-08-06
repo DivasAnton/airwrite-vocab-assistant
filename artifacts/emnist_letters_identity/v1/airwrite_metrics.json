@@ -1,0 +1,19 @@
+{
+  "test_loss": null,
+  "test_accuracy": 0.64125,
+  "macro_precision": 0.714480890183202,
+  "macro_recall": 0.641439594840231,
+  "macro_f1": 0.6439139845356204,
+  "top_3_accuracy": 0.815,
+  "test_sample_count": 1600,
+  "source_metrics": {
+    "lowercase": {
+      "accuracy": 0.7278911564625851,
+      "sample_count": 294.0
+    },
+    "uppercase": {
+      "accuracy": 0.6217457886676876,
+      "sample_count": 1306.0
+    }
+  }
+}

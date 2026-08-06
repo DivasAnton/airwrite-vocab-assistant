@@ -4,7 +4,7 @@ import pytest
 from app.inference.character_predictor import CharacterPredictor
 from app.inference.exceptions import CharacterPredictionError, InvalidModelInputError
 from app.inference.model_bundle import ModelBundle
-from app.ml.labels import CHARACTER_LABELS
+from app.ml.letter_identity_labels import LETTER_IDENTITY_LABELS
 
 
 class FakeModel:
@@ -25,8 +25,13 @@ def make_predictor(output: np.ndarray) -> tuple[CharacterPredictor, FakeModel]:
     model = FakeModel(output)
     model_bundle = ModelBundle(
         model=model,
-        labels=CHARACTER_LABELS,
-        model_version="0.1.0",
+        identity_labels=LETTER_IDENTITY_LABELS,
+        lowercase_display_labels=LETTER_IDENTITY_LABELS,
+        uppercase_display_labels=tuple(label.upper() for label in LETTER_IDENTITY_LABELS),
+        model_version="1.0.0",
+        task_type="letter_identity_classification",
+        case_sensitive=False,
+        case_source="user_selected_mode",
         expected_input_shape=(28, 28, 1),
         num_classes=26,
         preprocessing_contract={},
@@ -49,7 +54,7 @@ def test_predictor_builds_batch_and_returns_sorted_top_three() -> None:
 
     prediction = predictor.predict(image)
 
-    assert [candidate.label for candidate in prediction.candidates] == ["A", "D", "F"]
+    assert [candidate.identity for candidate in prediction.candidates] == ["a", "d", "f"]
     assert [candidate.rank for candidate in prediction.candidates] == [1, 2, 3]
     assert prediction.candidates[0].confidence == pytest.approx(0.50)
     assert model.received_input is not None

@@ -1,6 +1,7 @@
 import csv
 import importlib
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,11 @@ import numpy as np
 
 from app.ml.exceptions import ArtifactExportError
 from app.ml.labels import CHARACTER_LABELS, labels_payload
+from app.ml.letter_identity_labels import (
+    LETTER_IDENTITY_LABELS,
+    display_labels_payload,
+    identity_labels_payload,
+)
 from app.ml.model_evaluator import EvaluationResult
 
 
@@ -211,3 +217,142 @@ class ModelArtifactExporter:
                     }
                 )
                 writer.writerow(row)
+
+
+class EMNISTModelArtifactExporter(ModelArtifactExporter):
+    def export_bundle(
+        self,
+        artifact_root: Path,
+        checkpoint_path: Path,
+        metadata: dict[str, Any],
+        preprocessing: dict[str, Any],
+    ) -> Path:
+        if metadata.get("num_classes") != 26 or metadata.get("case_sensitive") is not False:
+            raise ArtifactExportError(
+                "EMNIST identity metadata requires num_classes=26 and case_sensitive=false"
+            )
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        model_path = artifact_root / "model.keras"
+        if model_path.exists() and not self.overwrite:
+            raise ArtifactExportError(f"Artifact already exists: {model_path}")
+        if checkpoint_path.resolve() != model_path.resolve():
+            shutil.copy2(checkpoint_path, model_path)
+        self.export_json(artifact_root / "identity_labels.json", identity_labels_payload())
+        self.export_json(
+            artifact_root / "uppercase_display_labels.json",
+            display_labels_payload(uppercase=True),
+        )
+        self.export_json(
+            artifact_root / "lowercase_display_labels.json",
+            display_labels_payload(uppercase=False),
+        )
+        self.export_json(artifact_root / "model_metadata.json", metadata)
+        self.export_json(artifact_root / "preprocessing_config.json", preprocessing)
+        return model_path
+
+    def export_identity_evaluation(
+        self,
+        result: EvaluationResult,
+        artifact_root: Path,
+        metrics_name: str,
+        report_prefix: str = "",
+    ) -> None:
+        self.export_json(artifact_root / metrics_name, result.metrics_payload())
+        self.export_json(
+            artifact_root / f"{report_prefix}classification_report.json",
+            {"labels": list(LETTER_IDENTITY_LABELS), "per_class": result.per_class_metrics},
+        )
+        self.export_json(
+            artifact_root / f"{report_prefix}confusion_matrix.json",
+            {"labels": list(LETTER_IDENTITY_LABELS), "matrix": result.confusion_matrix},
+        )
+        self._export_identity_confusion_image(
+            result, artifact_root / f"{report_prefix}confusion_matrix.png"
+        )
+        self._export_identity_errors(result, artifact_root / f"{report_prefix}error_analysis.csv")
+        self._export_identity_predictions(
+            result, artifact_root / f"{report_prefix}prediction_records.csv"
+        )
+
+    @staticmethod
+    def _export_identity_confusion_image(result: EvaluationResult, output_path: Path) -> None:
+        try:
+            pyplot = importlib.import_module("matplotlib.pyplot")
+        except ImportError as error:
+            raise ArtifactExportError(
+                "Matplotlib is required to export the confusion matrix image"
+            ) from error
+        figure, axes = pyplot.subplots(figsize=(12, 10))
+        image = axes.imshow(np.asarray(result.confusion_matrix), cmap="Blues")
+        axes.set_xticks(range(26), LETTER_IDENTITY_LABELS)
+        axes.set_yticks(range(26), LETTER_IDENTITY_LABELS)
+        axes.set_xlabel("Predicted identity")
+        axes.set_ylabel("True identity")
+        axes.set_title("EMNIST Letter Identity Confusion Matrix")
+        figure.colorbar(image, ax=axes)
+        figure.tight_layout()
+        figure.savefig(output_path, dpi=160)
+        pyplot.close(figure)
+
+    @staticmethod
+    def _export_identity_errors(result: EvaluationResult, output_path: Path) -> None:
+        fieldnames = (
+            "image_path",
+            "true_label",
+            "predicted_label",
+            "confidence",
+            "top_3",
+            "source",
+            "session_id",
+        )
+        with output_path.open("w", encoding="utf-8", newline="") as output_file:
+            writer = csv.DictWriter(output_file, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for error in result.error_analysis:
+                row = dict(error)
+                row["top_3"] = json.dumps(row["top_3"], ensure_ascii=True)
+                writer.writerow(row)
+
+    @staticmethod
+    def _export_identity_predictions(result: EvaluationResult, output_path: Path) -> None:
+        if not result.probabilities:
+            return
+        fieldnames = (
+            "image_path",
+            "true_label",
+            "predicted_label",
+            "confidence",
+            "top_3",
+            "source",
+        )
+        with output_path.open("w", encoding="utf-8", newline="") as output_file:
+            writer = csv.DictWriter(output_file, fieldnames=fieldnames)
+            writer.writeheader()
+            for index, probabilities in enumerate(result.probabilities):
+                predicted_index = int(np.argmax(probabilities))
+                top_indices = np.argsort(probabilities)[-3:][::-1]
+                writer.writerow(
+                    {
+                        "image_path": (
+                            result.image_paths[index]
+                            if index < len(result.image_paths)
+                            else f"dataset_sample:{index}"
+                        ),
+                        "true_label": LETTER_IDENTITY_LABELS[result.true_indices[index]],
+                        "predicted_label": LETTER_IDENTITY_LABELS[predicted_index],
+                        "confidence": probabilities[predicted_index],
+                        "top_3": json.dumps(
+                            [
+                                {
+                                    "label": LETTER_IDENTITY_LABELS[int(class_index)],
+                                    "probability": probabilities[int(class_index)],
+                                }
+                                for class_index in top_indices
+                            ],
+                            ensure_ascii=True,
+                        ),
+                        "source": (
+                            result.sources[index] if index < len(result.sources) else "dataset"
+                        ),
+                    }
+                )

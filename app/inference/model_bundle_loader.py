@@ -5,12 +5,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+from app.inference.case_label_resolver import CaseLabelResolver
 from app.inference.exceptions import (
     InvalidModelBundleError,
     ModelArtifactNotFoundError,
 )
 from app.inference.model_bundle import ModelBundle
-from app.ml.labels import CHARACTER_LABELS
 
 KerasModelLoader = Callable[..., Any]
 
@@ -19,13 +19,17 @@ class ModelBundleLoader:
     def __init__(
         self,
         model_path: Path,
-        labels_path: Path,
+        identity_labels_path: Path,
+        lowercase_display_labels_path: Path,
+        uppercase_display_labels_path: Path,
         metadata_path: Path,
         preprocessing_config_path: Path,
         model_loader: KerasModelLoader | None = None,
     ) -> None:
         self.model_path = model_path
-        self.labels_path = labels_path
+        self.identity_labels_path = identity_labels_path
+        self.lowercase_display_labels_path = lowercase_display_labels_path
+        self.uppercase_display_labels_path = uppercase_display_labels_path
         self.metadata_path = metadata_path
         self.preprocessing_config_path = preprocessing_config_path
         self._model_loader = model_loader or self._default_model_loader
@@ -39,19 +43,38 @@ class ModelBundleLoader:
             if not path.is_file():
                 raise ModelArtifactNotFoundError(f"Required {name} artifact not found: {path}")
 
-        labels_payload = self._load_json(self.labels_path, "labels")
+        identity_payload = self._load_json(self.identity_labels_path, "identity labels")
+        lowercase_payload = self._load_json(
+            self.lowercase_display_labels_path, "lowercase display labels"
+        )
+        uppercase_payload = self._load_json(
+            self.uppercase_display_labels_path, "uppercase display labels"
+        )
         metadata = self._load_json(self.metadata_path, "model metadata")
         preprocessing_contract = self._load_json(
             self.preprocessing_config_path,
             "preprocessing configuration",
         )
-        labels = self._parse_labels(labels_payload)
+        identity_labels = self._parse_labels(identity_payload, "identity labels")
+        lowercase_labels = self._parse_labels(lowercase_payload, "lowercase display labels")
+        uppercase_labels = self._parse_labels(uppercase_payload, "uppercase display labels")
+        try:
+            CaseLabelResolver.validate_mappings(
+                identity_labels,
+                lowercase_labels,
+                uppercase_labels,
+            )
+        except ValueError as error:
+            raise InvalidModelBundleError(str(error)) from error
         model_version = self._required_string(metadata, "model_version")
+        task_type = self._required_string(metadata, "task_type")
+        case_sensitive = self._required_bool(metadata, "case_sensitive")
+        case_source = self._required_string(metadata, "case_source")
         input_shape = self._parse_input_shape(metadata.get("input_shape"))
         num_classes = self._required_int(metadata, "num_classes")
-        if num_classes != len(labels):
+        if num_classes != len(identity_labels):
             raise InvalidModelBundleError(
-                f"Metadata num_classes={num_classes} does not match {len(labels)} labels"
+                f"Metadata num_classes={num_classes} does not match {len(identity_labels)} labels"
             )
 
         try:
@@ -68,8 +91,13 @@ class ModelBundleLoader:
 
         self._bundle = ModelBundle(
             model=model,
-            labels=labels,
+            identity_labels=identity_labels,
+            lowercase_display_labels=lowercase_labels,
+            uppercase_display_labels=uppercase_labels,
             model_version=model_version,
+            task_type=task_type,
+            case_sensitive=case_sensitive,
+            case_source=case_source,
             expected_input_shape=input_shape,
             num_classes=num_classes,
             preprocessing_contract=preprocessing_contract,
@@ -80,7 +108,9 @@ class ModelBundleLoader:
     def _artifact_paths(self) -> dict[str, Path]:
         return {
             "model": self.model_path,
-            "labels": self.labels_path,
+            "identity labels": self.identity_labels_path,
+            "lowercase display labels": self.lowercase_display_labels_path,
+            "uppercase display labels": self.uppercase_display_labels_path,
             "model metadata": self.metadata_path,
             "preprocessing configuration": self.preprocessing_config_path,
         }
@@ -96,17 +126,17 @@ class ModelBundleLoader:
         return cast(dict[str, object], payload)
 
     @staticmethod
-    def _parse_labels(payload: dict[str, object]) -> tuple[str, ...]:
+    def _parse_labels(payload: dict[str, object], artifact_name: str) -> tuple[str, ...]:
         raw_labels = payload.get("labels")
         if not isinstance(raw_labels, list) or not raw_labels:
-            raise InvalidModelBundleError("labels must be a non-empty list")
+            raise InvalidModelBundleError(f"{artifact_name} must be a non-empty list")
         if not all(isinstance(label, str) and label for label in raw_labels):
-            raise InvalidModelBundleError("Every label must be a non-empty string")
+            raise InvalidModelBundleError(
+                f"Every label in {artifact_name} must be a non-empty string"
+            )
         labels = tuple(cast(list[str], raw_labels))
         if len(set(labels)) != len(labels):
-            raise InvalidModelBundleError("labels must not contain duplicates")
-        if labels != CHARACTER_LABELS:
-            raise InvalidModelBundleError("labels must contain uppercase A-Z in Sprint 9 order")
+            raise InvalidModelBundleError(f"{artifact_name} must not contain duplicates")
         return labels
 
     @staticmethod
@@ -123,6 +153,13 @@ class ModelBundleLoader:
             raise InvalidModelBundleError(
                 f"Model metadata field {key!r} must be a positive integer"
             )
+        return value
+
+    @staticmethod
+    def _required_bool(payload: dict[str, object], key: str) -> bool:
+        value = payload.get(key)
+        if not isinstance(value, bool):
+            raise InvalidModelBundleError(f"Model metadata field {key!r} must be a boolean")
         return value
 
     @staticmethod

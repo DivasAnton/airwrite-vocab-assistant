@@ -6,6 +6,7 @@ from app.ml.exceptions import DatasetStructureError
 from app.ml.labels import CHARACTER_LABELS, label_to_index
 
 ALLOWED_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".bmp"})
+IGNORED_DATASET_DIRECTORIES = frozenset({"lowercase"})
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,8 @@ class DatasetScanner:
     def _check_label_directories(self) -> None:
         for child in sorted(self.dataset_root.iterdir(), key=lambda path: path.name.lower()):
             if child.name.startswith(".") or not child.is_dir():
+                continue
+            if child.name in IGNORED_DATASET_DIRECTORIES:
                 continue
             if child.name not in CHARACTER_LABELS:
                 self.issues.append(

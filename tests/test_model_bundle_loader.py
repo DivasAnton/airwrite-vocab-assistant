@@ -6,7 +6,7 @@ import pytest
 
 from app.inference.exceptions import InvalidModelBundleError, ModelArtifactNotFoundError
 from app.inference.model_bundle_loader import ModelBundleLoader
-from app.ml.labels import CHARACTER_LABELS
+from app.ml.letter_identity_labels import LETTER_IDENTITY_LABELS
 
 
 class FakeModel:
@@ -14,19 +14,44 @@ class FakeModel:
     output_shape = (None, 26)
 
 
-def make_artifacts(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+def make_artifacts(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     model_path = tmp_path / "model.keras"
-    labels_path = tmp_path / "labels.json"
+    identity_path = tmp_path / "identity.json"
+    lowercase_path = tmp_path / "lowercase.json"
+    uppercase_path = tmp_path / "uppercase.json"
     metadata_path = tmp_path / "metadata.json"
     preprocessing_path = tmp_path / "preprocessing.json"
     model_path.write_bytes(b"model")
-    labels_path.write_text(json.dumps({"labels": list(CHARACTER_LABELS)}), encoding="utf-8")
-    metadata_path.write_text(
-        json.dumps({"model_version": "0.1.0", "input_shape": [28, 28, 1], "num_classes": 26}),
+    identity_path.write_text(json.dumps({"labels": list(LETTER_IDENTITY_LABELS)}), encoding="utf-8")
+    lowercase_path.write_text(
+        json.dumps({"labels": list(LETTER_IDENTITY_LABELS)}), encoding="utf-8"
+    )
+    uppercase_path.write_text(
+        json.dumps({"labels": [label.upper() for label in LETTER_IDENTITY_LABELS]}),
         encoding="utf-8",
     )
-    preprocessing_path.write_text(json.dumps({"output_width": 28}), encoding="utf-8")
-    return model_path, labels_path, metadata_path, preprocessing_path
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "model_version": "1.0.0",
+                "task_type": "letter_identity_classification",
+                "case_sensitive": False,
+                "case_source": "user_selected_mode",
+                "input_shape": [28, 28, 1],
+                "num_classes": 26,
+            }
+        ),
+        encoding="utf-8",
+    )
+    preprocessing_path.write_text(json.dumps({"input_width": 28}), encoding="utf-8")
+    return (
+        model_path,
+        identity_path,
+        lowercase_path,
+        uppercase_path,
+        metadata_path,
+        preprocessing_path,
+    )
 
 
 def make_loader(tmp_path: Path, model_loader: Any) -> ModelBundleLoader:
@@ -45,8 +70,10 @@ def test_loader_loads_once_with_safe_inference_options(tmp_path: Path) -> None:
     second = loader.load()
 
     assert first is second
-    assert first.labels == CHARACTER_LABELS
-    assert first.model_version == "0.1.0"
+    assert first.identity_labels == LETTER_IDENTITY_LABELS
+    assert first.lowercase_display_labels == LETTER_IDENTITY_LABELS
+    assert first.uppercase_display_labels[0] == "A"
+    assert first.model_version == "1.0.0"
     assert len(calls) == 1
     assert calls[0][1] == {"compile": False, "safe_mode": True}
 
@@ -60,16 +87,18 @@ def test_loader_reports_missing_artifact(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("mapping_index", "payload"),
     [
-        {"labels": list(CHARACTER_LABELS[:-1])},
-        {"labels": [*CHARACTER_LABELS[:-1], "A"]},
-        {"labels": list(reversed(CHARACTER_LABELS))},
+        (1, {"labels": list(LETTER_IDENTITY_LABELS[:-1])}),
+        (2, {"labels": [*LETTER_IDENTITY_LABELS[:-1], "a"]}),
+        (3, {"labels": list(reversed(LETTER_IDENTITY_LABELS))}),
     ],
 )
-def test_loader_rejects_invalid_label_mapping(tmp_path: Path, payload: dict[str, object]) -> None:
+def test_loader_rejects_invalid_label_mapping(
+    tmp_path: Path, mapping_index: int, payload: dict[str, object]
+) -> None:
     paths = make_artifacts(tmp_path)
-    paths[1].write_text(json.dumps(payload), encoding="utf-8")
+    paths[mapping_index].write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(InvalidModelBundleError):
         ModelBundleLoader(*paths, model_loader=lambda *_args, **_kwargs: FakeModel()).load()
@@ -77,7 +106,7 @@ def test_loader_rejects_invalid_label_mapping(tmp_path: Path, payload: dict[str,
 
 def test_loader_rejects_malformed_metadata_json(tmp_path: Path) -> None:
     paths = make_artifacts(tmp_path)
-    paths[2].write_text("{broken", encoding="utf-8")
+    paths[4].write_text("{broken", encoding="utf-8")
 
     with pytest.raises(InvalidModelBundleError, match="metadata"):
         ModelBundleLoader(*paths, model_loader=lambda *_args, **_kwargs: FakeModel()).load()

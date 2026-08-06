@@ -1,16 +1,17 @@
 from pathlib import Path
-from typing import cast
 
 import cv2
-import numpy as np
-from numpy.typing import NDArray
 
+from app.preprocessing.airwrite_canvas_adapter import AirWriteCanvasAdapter
 from app.preprocessing.aspect_ratio_resizer import AspectRatioResizer
 from app.preprocessing.bounding_box_extractor import BoundingBoxExtractor
 from app.preprocessing.exceptions import InvalidImageError
 from app.preprocessing.foreground_normalizer import ForegroundNormalizer
 from app.preprocessing.image_validator import ImageValidator
+from app.preprocessing.model_input_contract import ModelInputContract
+from app.preprocessing.model_input_preprocessor import ModelInputPreprocessor
 from app.preprocessing.preprocessing_result import PreprocessingResult
+from app.preprocessing.preprocessing_source import PreprocessingSource
 
 
 class HandwritingPreprocessor:
@@ -22,39 +23,32 @@ class HandwritingPreprocessor:
         resizer: AspectRatioResizer | None = None,
         include_debug_images: bool = False,
     ) -> None:
-        self.validator = validator or ImageValidator()
-        self.normalizer = normalizer or ForegroundNormalizer()
-        self.extractor = extractor or BoundingBoxExtractor()
-        self.resizer = resizer or AspectRatioResizer()
-        self.include_debug_images = include_debug_images
+        selected_resizer = resizer or AspectRatioResizer()
+        self.airwrite_adapter = AirWriteCanvasAdapter(
+            validator=validator,
+            normalizer=normalizer,
+            extractor=extractor,
+            resizer=selected_resizer,
+            include_debug_images=include_debug_images,
+        )
+        self.model_input_preprocessor = ModelInputPreprocessor(
+            ModelInputContract(
+                width=selected_resizer.output_width,
+                height=selected_resizer.output_height,
+            )
+        )
 
     def process(self, image: object) -> PreprocessingResult:
-        valid_image = self.validator.validate(image)
-        original_shape = tuple(valid_image.shape)
-        foreground = self.normalizer.normalize(valid_image)
-        bounding_box = self.extractor.find(foreground.binary)
-        cropped = self.extractor.crop(foreground.grayscale, bounding_box)
-        processed = self.resizer.resize_and_center(cropped)
-        normalized = cast(NDArray[np.float32], processed.astype(np.float32) / 255.0)
-        foreground_pixel_count = self.extractor.count_foreground(foreground.binary)
-
-        debug_images: dict[str, NDArray[np.uint8]] = {}
-        if self.include_debug_images:
-            debug_images = {
-                "01_grayscale": foreground.grayscale,
-                "02_binary": foreground.binary,
-                "03_cropped": cropped,
-                "04_processed": processed,
-            }
-
-        return PreprocessingResult(
-            processed_image=processed,
-            normalized_image=normalized,
-            bounding_box=bounding_box,
-            original_shape=original_shape,
-            cropped_shape=tuple(cropped.shape),
-            foreground_pixel_count=foreground_pixel_count,
-            debug_images=debug_images,
+        adaptation = self.airwrite_adapter.adapt_with_metadata(image)
+        return self.model_input_preprocessor.process(
+            adaptation.prepared_image,
+            source=PreprocessingSource.AIRWRITE_CANVAS,
+            orientation_transform="none",
+            original_shape=adaptation.original_shape,
+            bounding_box=adaptation.bounding_box,
+            cropped_shape=adaptation.cropped_shape,
+            foreground_pixel_count=adaptation.foreground_pixel_count,
+            debug_images=adaptation.debug_images,
         )
 
     def process_file(self, path: Path) -> PreprocessingResult:
