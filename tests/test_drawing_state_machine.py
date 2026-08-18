@@ -23,6 +23,13 @@ def test_writing_open_palm_goes_paused() -> None:
     assert machine.update(Gesture.OPEN_PALM, timestamp_ms=2) == DrawingState.PAUSED
 
 
+def test_writing_two_fingers_goes_paused() -> None:
+    machine = DrawingStateMachine(cooldown_ms=0)
+    machine.set_state(DrawingState.WRITING, timestamp_ms=1)
+
+    assert machine.update(Gesture.TWO_FINGERS, timestamp_ms=2) == DrawingState.PAUSED
+
+
 def test_paused_index_only_goes_writing() -> None:
     machine = DrawingStateMachine(cooldown_ms=0)
     machine.set_state(DrawingState.PAUSED, timestamp_ms=1)
@@ -42,6 +49,13 @@ def test_done_open_palm_goes_ready() -> None:
     machine.set_state(DrawingState.DONE, timestamp_ms=1)
 
     assert machine.update(Gesture.OPEN_PALM, timestamp_ms=2) == DrawingState.READY
+
+
+def test_done_two_fingers_goes_ready() -> None:
+    machine = DrawingStateMachine(cooldown_ms=0)
+    machine.set_state(DrawingState.DONE, timestamp_ms=1)
+
+    assert machine.update(Gesture.TWO_FINGERS, timestamp_ms=2) == DrawingState.READY
 
 
 def test_idle_fist_does_not_jump_to_done() -> None:

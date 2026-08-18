@@ -62,10 +62,18 @@ def test_fist() -> None:
     assert gesture == Gesture.FIST
 
 
-def test_mixed_gesture_returns_unknown() -> None:
+def test_two_fingers() -> None:
     detector = GestureDetector()
 
     gesture = detector.detect(make_result(make_landmarks(True, True, False, False)))
+
+    assert gesture == Gesture.TWO_FINGERS
+
+
+def test_mixed_gesture_returns_unknown() -> None:
+    detector = GestureDetector()
+
+    gesture = detector.detect(make_result(make_landmarks(True, False, False, True)))
 
     assert gesture == Gesture.UNKNOWN
 

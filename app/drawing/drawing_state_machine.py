@@ -48,7 +48,7 @@ class DrawingStateMachine:
                 return DrawingState.WRITING
             return DrawingState.READY
         if self.state == DrawingState.WRITING:
-            if gesture == Gesture.OPEN_PALM:
+            if gesture in (Gesture.OPEN_PALM, Gesture.TWO_FINGERS):
                 return DrawingState.PAUSED
             if gesture == Gesture.FIST:
                 return DrawingState.DONE
@@ -60,7 +60,7 @@ class DrawingStateMachine:
                 return DrawingState.DONE
             return DrawingState.PAUSED
         if self.state == DrawingState.DONE:
-            if gesture == Gesture.OPEN_PALM:
+            if gesture in (Gesture.OPEN_PALM, Gesture.TWO_FINGERS):
                 return DrawingState.READY
             return DrawingState.DONE
         if self.state == DrawingState.CLEAR:

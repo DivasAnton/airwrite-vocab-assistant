@@ -55,3 +55,22 @@ canvas without saving, clearing, or changing drawing state.
 Missing or incompatible artifacts disable prediction while camera, drawing, and saving remain
 available. Empty canvases return `SKIPPED_EMPTY`; low-confidence results return `UNCERTAIN`; model
 or preprocessing failures return `FAILED`. Technical details go to logs, not the camera overlay.
+# Continuous-Word CRNN Runtime Contract
+
+The Sprint 11C-V3 model is independent of the character identity bundle described below.
+
+- Artifact: Keras model at `CONTINUOUS_CRNN_MODEL_PATH`, loaded once with `compile=False`.
+- Input: finite `float32`, shape `(1, 32, 128, 1)`, values in `[0, 1]`.
+- Foreground: light strokes on a black background.
+- Geometry: full foreground crop, aspect-preserving resize, vertical centering, right padding.
+- Output: finite logits/probabilities shaped `(1, T, 27)`.
+- Classes: canonical `a-z` at indices `0-25`; CTC blank at index `26`.
+- Decode: prefix beam search with configured Top-K and beam width.
+- Scope: one ASCII English word, 2-12 characters by default.
+- Case: selected by `WordCasePolicy`; never inferred by the CRNN.
+- Threading: inference runs on the controller's single worker; the camera loop polls completion.
+- Failure isolation: an unavailable artifact disables continuous mode only.
+
+The associated `metadata.json` must record model name/version, input shape, alphabet, blank index,
+training/validation counts, CER, exact match, and whether the run was a smoke test. A smoke artifact
+must not be used as the default runtime model.

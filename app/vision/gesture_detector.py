@@ -39,6 +39,13 @@ class GestureDetector:
             and not fingers["pinky"]
         ):
             return Gesture.INDEX_ONLY
+        if (
+            fingers["index"]
+            and fingers["middle"]
+            and not fingers["ring"]
+            and not fingers["pinky"]
+        ):
+            return Gesture.TWO_FINGERS
         if fingers["index"] and fingers["middle"] and fingers["ring"] and fingers["pinky"]:
             return Gesture.OPEN_PALM
         if (
