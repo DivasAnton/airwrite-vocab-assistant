@@ -35,8 +35,13 @@ class DatasetScanner:
         self.issues = []
         self._check_label_directories()
         entries: list[DatasetManifestEntry] = []
+        label_dirs = {
+            child.name.upper(): child
+            for child in self.dataset_root.iterdir()
+            if child.is_dir() and child.name.upper() in CHARACTER_LABELS
+        }
         for label in CHARACTER_LABELS:
-            label_dir = self.dataset_root / label
+            label_dir = label_dirs.get(label, self.dataset_root / label)
             if not label_dir.is_dir():
                 self.issues.append(
                     DatasetScanIssue(
@@ -73,9 +78,9 @@ class DatasetScanner:
         for child in sorted(self.dataset_root.iterdir(), key=lambda path: path.name.lower()):
             if child.name.startswith(".") or not child.is_dir():
                 continue
-            if child.name in IGNORED_DATASET_DIRECTORIES:
+            if child.name.lower() in IGNORED_DATASET_DIRECTORIES:
                 continue
-            if child.name not in CHARACTER_LABELS:
+            if child.name.upper() not in CHARACTER_LABELS:
                 self.issues.append(
                     DatasetScanIssue(
                         image_path=self._portable_path(child),

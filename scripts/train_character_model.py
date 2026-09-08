@@ -93,9 +93,23 @@ def main() -> int:
     best_model = tensorflow.keras.models.load_model(training_settings.model_output_path)
     evaluation = ModelEvaluator().evaluate_model(best_model, loader, test_entries)
     exporter = ModelArtifactExporter(overwrite=True)
+    exporter.export_identity_bundle_labels(training_settings.model_output_path.parent)
     exporter.export_labels(training_settings.labels_output_path)
     exporter.export_preprocessing_contract(
         training_settings.preprocessing_config_output_path,
+        output_width=training_settings.input_width,
+        output_height=training_settings.input_height,
+        channels=training_settings.input_channels,
+        content_width=settings.preprocess_content_width,
+        content_height=settings.preprocess_content_height,
+        binary_threshold=settings.preprocess_binary_threshold,
+        crop_padding=settings.preprocess_crop_padding,
+        min_foreground_pixels=settings.preprocess_min_foreground_pixels,
+        invert_input=settings.preprocess_invert_input,
+        center_of_mass=settings.preprocess_center_of_mass,
+    )
+    exporter.export_preprocessing_contract(
+        training_settings.model_output_path.parent / "preprocessing_config.json",
         output_width=training_settings.input_width,
         output_height=training_settings.input_height,
         channels=training_settings.input_channels,
@@ -125,6 +139,9 @@ def main() -> int:
         "model_name": training_settings.model_name,
         "model_version": training_settings.model_version,
         "framework": "keras",
+        "task_type": "airwrite_custom_identity",
+        "case_sensitive": False,
+        "case_source": "identity_only",
         "input_shape": [
             training_settings.input_height,
             training_settings.input_width,
@@ -134,6 +151,7 @@ def main() -> int:
         "random_seed": training_settings.random_seed,
         "dataset_manifest": relative_path(training_settings.split_path),
         "dataset_images_preprocessed": training_settings.dataset_images_preprocessed,
+        "dataset_root": relative_path(training_settings.dataset_root),
         "split_counts": dict(split_counts),
         "training_timestamp": timestamp,
         "epochs_completed": training_result.epochs_completed,
@@ -153,6 +171,9 @@ def main() -> int:
         },
     }
     exporter.export_metadata(training_settings.model_metadata_path, metadata)
+    exporter.export_metadata(
+        training_settings.model_output_path.parent / "model_metadata.json", metadata
+    )
     exporter.append_experiment(
         training_settings.experiment_log_path,
         {

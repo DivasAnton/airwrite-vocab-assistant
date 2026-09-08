@@ -448,6 +448,17 @@ Các phím dưới đây là mặc định trong `.env.example` hoặc được 
 | `Enter` | Confirm từ hiện tại |
 | `N` | Bắt đầu từ mới sau khi confirm |
 
+Thu thập chính xác một số lượng mẫu mới cho một chữ cụ thể:
+
+```powershell
+python scripts/collect_custom_data.py Z --limit 63
+python scripts/collect_custom_data.py r --limit 50
+```
+
+Chữ hoa/thường được suy ra từ đối số (`Z` hoặc `r`). Có thể ghi đè bằng
+`--style uppercase` hoặc `--style lowercase`. Vẽ một mẫu rồi nhấn `v`; canvas tự xóa và ứng dụng
+tự đóng sau khi lưu đủ số lượng. Khi đang thu thập có giới hạn, phím đổi nhãn bị khóa.
+
 Khi có candidate pending, nhóm phím `1/2/3/X` được ưu tiên trước các lệnh canvas để tránh tạo thêm
 prediction khi quyết định cũ chưa được xử lý. Các phím cấu hình có thể đổi trong `.env`. Dataset
 capture mặc định bật. Uppercase được lưu dưới `data/raw_airwrite/<A-Z>/`; lowercase được lưu dưới

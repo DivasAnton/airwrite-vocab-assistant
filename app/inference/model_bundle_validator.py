@@ -23,12 +23,12 @@ class ModelBundleValidator:
         bundle: ModelBundle,
         runtime_preprocessing_contract: Mapping[str, object],
     ) -> None:
-        if bundle.task_type != "letter_identity_classification":
-            raise InvalidModelBundleError("Model task_type must be letter_identity_classification")
+        if bundle.task_type not in {"letter_identity_classification", "airwrite_custom_identity"}:
+            raise InvalidModelBundleError("Unsupported letter identity model task_type")
         if bundle.case_sensitive is not False:
             raise InvalidModelBundleError("Identity model metadata must set case_sensitive=false")
-        if bundle.case_source != "user_selected_mode":
-            raise InvalidModelBundleError("Identity model case_source must be user_selected_mode")
+        if bundle.case_source not in {"user_selected_mode", "identity_only"}:
+            raise InvalidModelBundleError("Identity model case_source is invalid")
         if bundle.num_classes != 26:
             raise InvalidModelBundleError("Identity model must contain exactly 26 classes")
 
@@ -61,7 +61,13 @@ class ModelBundleValidator:
         except ValueError as error:
             raise InvalidModelBundleError(str(error)) from error
 
-        for key in self.ARTIFACT_CONTRACT_KEYS:
+        required_contract_keys = tuple(
+            key
+            for key in self.ARTIFACT_CONTRACT_KEYS
+            if key != "intensity_inversion"
+            or ("intensity_inversion" in bundle.preprocessing_contract)
+        )
+        for key in required_contract_keys:
             if key not in bundle.preprocessing_contract:
                 raise InvalidModelBundleError(f"Missing preprocessing contract field: {key}")
 
@@ -73,7 +79,9 @@ class ModelBundleValidator:
             "foreground": bundle.preprocessing_contract["foreground"],
             "normalization_divisor": bundle.preprocessing_contract["normalization_divisor"],
             "orientation_transform": "none",
-            "invert_input": bundle.preprocessing_contract["intensity_inversion"],
+            "invert_input": bundle.preprocessing_contract.get(
+                "intensity_inversion", bundle.preprocessing_contract.get("invert_input")
+            ),
         }
         for key, expected_value in expected_runtime.items():
             if runtime_preprocessing_contract.get(key) != expected_value:
@@ -82,8 +90,13 @@ class ModelBundleValidator:
                     f"{key}={expected_value!r} expected, "
                     f"{runtime_preprocessing_contract.get(key)!r} runtime"
                 )
-        if bundle.preprocessing_contract["orientation_transform"] != "transpose":
-            raise InvalidModelBundleError("EMNIST source orientation transform must be transpose")
+        expected_orientation = (
+            "transpose" if bundle.task_type == "letter_identity_classification" else "none"
+        )
+        if bundle.preprocessing_contract["orientation_transform"] != expected_orientation:
+            raise InvalidModelBundleError(
+                f"Model source orientation transform must be {expected_orientation}"
+            )
 
         artifact_shape = (
             bundle.preprocessing_contract["input_height"],
