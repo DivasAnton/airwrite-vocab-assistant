@@ -22,7 +22,9 @@ from app.inference.character_recognition_service import CharacterRecognitionServ
 from app.inference.completion_recognition_coordinator import (
     CompletionRecognitionCoordinator,
 )
+from app.inference.ensemble_character_predictor import EnsembleCharacterPredictor
 from app.inference.exceptions import InferenceError
+from app.inference.identity_only_label_resolver import IdentityOnlyLabelResolver
 from app.inference.model_bundle_loader import ModelBundleLoader
 from app.inference.model_bundle_validator import ModelBundleValidator
 from app.inference.prediction_policy import PredictionPolicy
@@ -332,7 +334,7 @@ def main() -> None:
     case_controller = CaseModeController(case_state)
     supported_character_set = SupportedCharacterSet.english_letters()
     try:
-        bundle = ModelBundleLoader(
+        custom_bundle = ModelBundleLoader(
             model_path=identity_model_settings.model_path,
             identity_labels_path=identity_model_settings.identity_labels_path,
             lowercase_display_labels_path=identity_model_settings.lowercase_display_labels_path,
@@ -340,18 +342,35 @@ def main() -> None:
             metadata_path=identity_model_settings.metadata_path,
             preprocessing_config_path=identity_model_settings.preprocessing_config_path,
         ).load()
-        ModelBundleValidator().validate(bundle, settings.preprocessing_runtime_contract())
+        ModelBundleValidator().validate(custom_bundle, settings.preprocessing_runtime_contract())
+        bundle = custom_bundle
         supported_character_set = SupportedCharacterSet(
             identities=bundle.identity_labels,
             lowercase_characters=bundle.lowercase_display_labels,
             uppercase_characters=bundle.uppercase_display_labels,
         )
-        case_resolver = CaseLabelResolver(
+        case_resolver = IdentityOnlyLabelResolver(
             bundle.identity_labels,
             bundle.lowercase_display_labels,
             bundle.uppercase_display_labels,
         )
         predictor = CharacterPredictor(bundle=bundle, top_k=inference_settings.top_k)
+        emnist_root = identity_model_settings.emnist_model_path.parent
+        emnist_bundle = ModelBundleLoader(
+            model_path=identity_model_settings.emnist_model_path,
+            identity_labels_path=emnist_root / "identity_labels.json",
+            lowercase_display_labels_path=emnist_root / "lowercase_display_labels.json",
+            uppercase_display_labels_path=emnist_root / "uppercase_display_labels.json",
+            metadata_path=emnist_root / "model_metadata.json",
+            preprocessing_config_path=emnist_root / "preprocessing_config.json",
+        ).load()
+        ModelBundleValidator().validate(emnist_bundle, settings.preprocessing_runtime_contract())
+        predictor = EnsembleCharacterPredictor(
+            custom=predictor,
+            emnist=CharacterPredictor(emnist_bundle, top_k=inference_settings.top_k),
+            custom_weight=0.80,
+            top_k=inference_settings.top_k,
+        )
         recognition_service = CharacterRecognitionService(
             preprocessor=preprocessor,
             predictor=predictor,
@@ -467,6 +486,7 @@ def main() -> None:
         if dataset_saver is not None
         else settings.dataset_capture_initial_label
     )
+    dataset_samples_saved = 0
     save_status_expires_at_ms = 0
     preprocess_status_expires_at_ms = 0
     dataset_status_expires_at_ms = 0
@@ -940,6 +960,7 @@ def main() -> None:
             if (
                 settings.enable_keyboard_fallback
                 and settings.enable_dataset_capture
+                and settings.dataset_capture_limit == 0
                 and dataset_saver is not None
                 and is_dataset_label_previous_key(key, settings.dataset_capture_previous_label_key)
             ):
@@ -955,6 +976,7 @@ def main() -> None:
             if (
                 settings.enable_keyboard_fallback
                 and settings.enable_dataset_capture
+                and settings.dataset_capture_limit == 0
                 and dataset_saver is not None
                 and is_dataset_label_next_key(key, settings.dataset_capture_next_label_key)
             ):
@@ -996,8 +1018,20 @@ def main() -> None:
                             f"Dataset: {dataset_result.label}/{dataset_result.file_path.name}"
                         )
                         logger.info("%s", dataset_result.message)
+                        dataset_samples_saved += 1
                         if settings.dataset_capture_clear_after_save:
                             drawing_controller.clear(previous_timestamp_ms)
+                        if (
+                            settings.dataset_capture_limit > 0
+                            and dataset_samples_saved >= settings.dataset_capture_limit
+                        ):
+                            logger.info(
+                                "Dataset collection complete: %s/%s samples for %s",
+                                dataset_samples_saved,
+                                settings.dataset_capture_limit,
+                                selected_dataset_label,
+                            )
+                            break
                 dataset_status_expires_at_ms = (
                     previous_timestamp_ms + settings.save_status_display_ms
                 )

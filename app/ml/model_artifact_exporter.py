@@ -34,6 +34,17 @@ class ModelArtifactExporter:
     def export_labels(self, labels_output_path: Path) -> None:
         self.export_json(labels_output_path, labels_payload())
 
+    def export_identity_bundle_labels(self, artifact_root: Path) -> None:
+        self.export_json(artifact_root / "identity_labels.json", identity_labels_payload())
+        self.export_json(
+            artifact_root / "lowercase_display_labels.json",
+            display_labels_payload(uppercase=False),
+        )
+        self.export_json(
+            artifact_root / "uppercase_display_labels.json",
+            display_labels_payload(uppercase=True),
+        )
+
     def export_preprocessing_contract(
         self,
         path: Path,
@@ -54,7 +65,11 @@ class ModelArtifactExporter:
                 "version": 1,
                 "output_width": output_width,
                 "output_height": output_height,
+                "input_width": output_width,
+                "input_height": output_height,
                 "channels": channels,
+                "orientation_transform": "none",
+                "intensity_inversion": invert_input,
                 "background": "black",
                 "foreground": "light",
                 "normalized_min": 0.0,

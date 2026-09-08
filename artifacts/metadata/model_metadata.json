@@ -1,8 +1,10 @@
 {
   "model_name": "airwrite_character_recognizer",
   "model_version": "0.1.0",
-  "model_sha256": "fee2485d1a40355d5bcdba01520af90654e91591b9376449de98e32f40daa4bb",
   "framework": "keras",
+  "task_type": "airwrite_custom_identity",
+  "case_sensitive": false,
+  "case_source": "identity_only",
   "input_shape": [
     28,
     28,
@@ -12,19 +14,20 @@
   "random_seed": 42,
   "dataset_manifest": "data/manifests/dataset_splits.csv",
   "dataset_images_preprocessed": true,
+  "dataset_root": "data/raw_airwrite",
   "split_counts": {
-    "train": 914,
-    "validation": 196,
-    "test": 196
+    "train": 2790,
+    "validation": 598,
+    "test": 598
   },
-  "training_timestamp": "2026-08-05T03:27:26.720970+00:00",
-  "epochs_completed": 50,
-  "best_epoch": 50,
-  "validation_loss": 0.9101244807243347,
-  "validation_accuracy": 0.8163265585899353,
-  "test_accuracy": 0.7908163265306123,
-  "macro_f1": 0.77384614439568,
-  "top_3_accuracy": 0.9030612244897959,
+  "training_timestamp": "2026-09-08T08:03:14.649790+00:00",
+  "epochs_completed": 42,
+  "best_epoch": 34,
+  "validation_loss": 0.6422333717346191,
+  "validation_accuracy": 0.8193979859352112,
+  "test_accuracy": 0.8076923076923077,
+  "macro_f1": 0.806194354261849,
+  "top_3_accuracy": 0.9230769230769231,
   "augmentation": {
     "enabled": true,
     "rotation_factor": 0.01,

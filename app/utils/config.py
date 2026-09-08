@@ -162,6 +162,7 @@ class Settings:
     dataset_capture_next_label_key: str = os.getenv("DATASET_CAPTURE_NEXT_LABEL_KEY", "]")
     dataset_capture_previous_label_key: str = os.getenv("DATASET_CAPTURE_PREVIOUS_LABEL_KEY", "[")
     dataset_capture_clear_after_save: bool = env_to_bool("DATASET_CAPTURE_CLEAR_AFTER_SAVE", False)
+    dataset_capture_limit: int = int(os.getenv("DATASET_CAPTURE_LIMIT", "0"))
 
     model_path: Path = PROJECT_ROOT / os.getenv("MODEL_PATH", "models/character_cnn.pth")
     raw_data_dir: Path = PROJECT_ROOT / os.getenv("RAW_DATA_DIR", "data/raw")
@@ -310,6 +311,8 @@ class Settings:
             raise ValueError("Dataset capture keys must contain exactly one character")
         if len(capture_keys) != 3:
             raise ValueError("Dataset capture keys must be distinct")
+        if self.dataset_capture_limit < 0:
+            raise ValueError("DATASET_CAPTURE_LIMIT must be greater than or equal to zero")
         reserved_keys = {
             self.manual_save_key.lower(),
             self.manual_preprocess_key.lower(),
@@ -613,26 +616,29 @@ class InferenceSettings:
 @dataclass
 class IdentityModelSettings:
     model_path: Path = PROJECT_ROOT / os.getenv(
-        "IDENTITY_MODEL_PATH", "artifacts/emnist_letters_identity/v1/model.keras"
+        "IDENTITY_MODEL_PATH", "artifacts/airwrite_custom_identity/v2/model.keras"
     )
     identity_labels_path: Path = PROJECT_ROOT / os.getenv(
-        "IDENTITY_LABELS_PATH", "artifacts/emnist_letters_identity/v1/identity_labels.json"
+        "IDENTITY_LABELS_PATH", "artifacts/airwrite_custom_identity/v2/identity_labels.json"
     )
     lowercase_display_labels_path: Path = PROJECT_ROOT / os.getenv(
         "LOWERCASE_DISPLAY_LABELS_PATH",
-        "artifacts/emnist_letters_identity/v1/lowercase_display_labels.json",
+        "artifacts/airwrite_custom_identity/v2/lowercase_display_labels.json",
     )
     uppercase_display_labels_path: Path = PROJECT_ROOT / os.getenv(
         "UPPERCASE_DISPLAY_LABELS_PATH",
-        "artifacts/emnist_letters_identity/v1/uppercase_display_labels.json",
+        "artifacts/airwrite_custom_identity/v2/uppercase_display_labels.json",
     )
     metadata_path: Path = PROJECT_ROOT / os.getenv(
         "IDENTITY_MODEL_METADATA_PATH",
-        "artifacts/emnist_letters_identity/v1/model_metadata.json",
+        "artifacts/airwrite_custom_identity/v2/model_metadata.json",
     )
     preprocessing_config_path: Path = PROJECT_ROOT / os.getenv(
         "IDENTITY_PREPROCESSING_CONFIG_PATH",
-        "artifacts/emnist_letters_identity/v1/preprocessing_config.json",
+        "artifacts/airwrite_custom_identity/v2/preprocessing_config.json",
+    )
+    emnist_model_path: Path = PROJECT_ROOT / os.getenv(
+        "EMNIST_SUPPORT_MODEL_PATH", "artifacts/emnist_letters_identity/v1/model.keras"
     )
 
     def validate(self) -> None:

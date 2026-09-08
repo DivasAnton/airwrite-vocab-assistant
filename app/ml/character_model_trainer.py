@@ -55,6 +55,9 @@ class CharacterModelTrainer:
                 monitor="val_loss",
                 save_best_only=True,
             ),
+            tensorflow.keras.callbacks.ReduceLROnPlateau(
+                monitor="val_loss", patience=2, factor=0.5, min_lr=1e-6
+            ),
             tensorflow.keras.callbacks.CSVLogger(str(self.history_path)),
             tensorflow.keras.callbacks.TerminateOnNaN(),
         ]
