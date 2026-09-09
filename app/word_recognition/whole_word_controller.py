@@ -3,7 +3,6 @@ from app.word_builder.character_entry import CharacterEntry
 from app.word_builder.word_action import WordAction
 from app.word_builder.word_builder import WordBuilder
 from app.word_builder.word_builder_result import WordBuilderResult
-from app.word_recognition.drawing_input_mode import DrawingInputMode
 from app.word_recognition.isolated_letter_word_recognition_strategy import (
     IsolatedLetterWordRecognitionStrategy,
 )
@@ -41,7 +40,6 @@ class WholeWordController:
             return self.draft
         result = self.recognition_service.recognize(
             snapshot,
-            DrawingInputMode.ISOLATED_WORD,
             case_policy,
         )
         if result.status in {

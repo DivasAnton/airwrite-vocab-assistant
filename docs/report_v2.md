@@ -29,7 +29,7 @@ Webcam → Hand landmarks → Finger/gesture state machine → AirCanvas
 | Case handling | `LOWERCASE`, `UPPERCASE`, `CAPITALIZE_FIRST`, `CUSTOM`; model không tự đoán case |
 | Prediction acceptance | Top-1 confidence `>=0.60` và margin Top-1/Top-2 `>=0.15` |
 | Candidate correction | Top-3; chọn bằng `1/2/3`, hủy bằng `X` |
-| Character Mode | Một chữ cho mỗi lần `DONE` |
+| Input Mode | Isolated Whole-Word; một lần `DONE` cho toàn bộ từ |
 | Word Mode | Segment chữ rời, review draft, tách/gộp, accept/cancel, commit nguyên tử |
 | Runtime | Python 3.11 target, OpenCV, MediaPipe, NumPy, TensorFlow/Keras |
 | Privacy | Chỉ lưu canvas/dataset image local; không lưu raw camera video |

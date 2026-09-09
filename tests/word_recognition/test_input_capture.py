@@ -1,22 +1,10 @@
 import numpy as np
 
-from app.word_recognition.drawing_input_mode import DrawingInputMode
 from app.word_recognition.input_mode_controller import InputModeController
 from app.word_recognition.stroke_point import StrokePoint
 from app.word_recognition.stroke_recorder import StrokeRecorder
 from app.word_recognition.word_input_snapshot import WordInputSnapshot
 from app.word_recognition.word_writing_region import WordWritingRegion
-
-
-def test_input_mode_switches_and_resets_temporary_state() -> None:
-    calls: list[str] = []
-    controller = InputModeController(DrawingInputMode.CHARACTER, lambda: calls.append("reset"))
-
-    assert controller.set_word_mode()
-    assert controller.current_mode is DrawingInputMode.ISOLATED_WORD
-    assert not controller.set_word_mode()
-    assert controller.set_character_mode()
-    assert calls == ["reset", "reset"]
 
 
 def test_word_writing_region_uses_canvas_ratios_and_bounds() -> None:

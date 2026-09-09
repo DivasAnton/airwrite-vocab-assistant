@@ -561,7 +561,8 @@ def main() -> None:
                 frame_height=frame_height,
             )
             assert drawing_controller is not None
-            word_mode = input_mode_controller.current_mode is DrawingInputMode.ISOLATED_WORD
+            # The web learning flow uses one input contract: isolated whole-word writing.
+            word_mode = True
             drawing_controller.configure_word_input(
                 stroke_recorder if word_mode else None,
                 word_writing_region if word_mode else None,
@@ -575,15 +576,6 @@ def main() -> None:
                 controller_result = drawing_controller.update(stable_gesture, finger_result)
             if controller_result.state is not DrawingState.DONE:
                 word_done_handled = False
-            completion_result = (
-                completion_coordinator.handle_transition(
-                    controller_result.state,
-                    air_canvas,
-                    allow_prediction=word_builder.pending_selection is None,
-                )
-                if not word_mode
-                else None
-            )
             if (
                 word_mode
                 and controller_result.state is DrawingState.DONE
@@ -604,24 +596,6 @@ def main() -> None:
                 )
                 word_done_handled = True
                 logger.info("%s", whole_word_controller.last_message)
-            if completion_result is not None and completion_result.save_result is not None:
-                save_result = completion_result.save_result
-                last_save_result = save_result
-                save_status_expires_at_ms = previous_timestamp_ms + settings.save_status_display_ms
-                log_save_result(save_result)
-            if completion_result is not None and completion_result.prediction_result is not None:
-                last_prediction_result = completion_result.prediction_result
-                prediction_display_started_ms = previous_timestamp_ms
-                logger.info("%s", last_prediction_result.message)
-                last_word_builder_result = word_builder_controller.handle_prediction(
-                    last_prediction_result
-                )
-                word_status_started_ms = previous_timestamp_ms
-                logger.info("%s", last_word_builder_result.message)
-                update_case_state_after_word_action(last_word_builder_result, case_state)
-                if should_auto_clear_canvas(last_word_builder_result):
-                    controller_result = drawing_controller.clear(previous_timestamp_ms)
-
             annotated_frame = renderer.draw(mirrored_frame, hand_result)
             annotated_frame = finger_renderer.draw(annotated_frame, finger_result)
             canvas_image = air_canvas.get_image()
@@ -669,13 +643,8 @@ def main() -> None:
             )
             hud_lines = [
                 *([f"FPS: {fps:.1f}"] if settings.show_fps else []),
-                f"Input: {input_mode_controller.current_mode.value}",
-                "Switch: W WORD | R CHARACTER",
-                (
-                    f"Case: {word_case_policy.value}"
-                    if input_mode_controller.current_mode is DrawingInputMode.ISOLATED_WORD
-                    else f"Case: {case_state.get_effective_mode().value}"
-                ),
+                "Input: ISOLATED_WORD",
+                f"Case: {word_case_policy.value}",
                 f"Word: {word_builder.current_word or '_'}",
                 *([f"Hand: {hand_label}"] if settings.draw_handedness else []),
                 f"Tracking: {finger_status}",
@@ -773,64 +742,24 @@ def main() -> None:
                     logger.warning("Whole-word review action failed: %s", error)
                 continue
 
-            if is_named_key(key, whole_word_settings.character_mode_key):
-                if word_builder.pending_selection is not None:
-                    cancelled_pending = word_builder.pending_selection
-                    last_word_builder_result = word_builder_controller.cancel_pending()
-                    update_case_state_after_word_action(
-                        last_word_builder_result,
-                        case_state,
-                        cancelled_pending,
-                    )
-                if input_mode_controller.set_character_mode():
-                    drawing_controller.clear(previous_timestamp_ms)
-                    stroke_recorder.reset()
-                    word_done_handled = False
-                    last_word_builder_result = word_builder.snapshot(
-                        message="Character Mode enabled"
-                    )
-                    word_status_started_ms = previous_timestamp_ms
-                    logger.info("Drawing input mode changed to CHARACTER")
+            word_case_keys = {
+                whole_word_settings.case_lowercase_key: WordCasePolicy.LOWERCASE,
+                whole_word_settings.case_uppercase_key: WordCasePolicy.UPPERCASE,
+                whole_word_settings.case_capitalize_key: WordCasePolicy.CAPITALIZE_FIRST,
+                whole_word_settings.case_custom_key: WordCasePolicy.CUSTOM,
+            }
+            selected_policy = next(
+                (
+                    policy
+                    for configured_key, policy in word_case_keys.items()
+                    if is_named_key(key, configured_key)
+                ),
+                None,
+            )
+            if selected_policy is not None:
+                word_case_policy = selected_policy
+                logger.info("Whole-word case policy changed to %s", word_case_policy.value)
                 continue
-            if is_named_key(key, whole_word_settings.word_mode_key):
-                if word_builder.pending_selection is not None:
-                    cancelled_pending = word_builder.pending_selection
-                    last_word_builder_result = word_builder_controller.cancel_pending()
-                    update_case_state_after_word_action(
-                        last_word_builder_result,
-                        case_state,
-                        cancelled_pending,
-                    )
-                if input_mode_controller.set_word_mode():
-                    drawing_controller.clear(previous_timestamp_ms)
-                    stroke_recorder.reset()
-                    word_done_handled = False
-                    last_word_builder_result = word_builder.snapshot(
-                        message="Whole-Word Mode enabled; write inside the ROI"
-                    )
-                    word_status_started_ms = previous_timestamp_ms
-                    logger.info("Drawing input mode changed to ISOLATED_WORD")
-                continue
-
-            if input_mode_controller.current_mode is DrawingInputMode.ISOLATED_WORD:
-                word_case_keys = {
-                    whole_word_settings.case_lowercase_key: WordCasePolicy.LOWERCASE,
-                    whole_word_settings.case_uppercase_key: WordCasePolicy.UPPERCASE,
-                    whole_word_settings.case_capitalize_key: WordCasePolicy.CAPITALIZE_FIRST,
-                    whole_word_settings.case_custom_key: WordCasePolicy.CUSTOM,
-                }
-                selected_policy = next(
-                    (
-                        policy
-                        for configured_key, policy in word_case_keys.items()
-                        if is_named_key(key, configured_key)
-                    ),
-                    None,
-                )
-                if selected_policy is not None:
-                    word_case_policy = selected_policy
-                    logger.info("Whole-word case policy changed to %s", word_case_policy.value)
-                    continue
 
             if word_builder.pending_selection is not None:
                 rank = selected_candidate_rank(key)
@@ -855,20 +784,6 @@ def main() -> None:
                     if should_auto_clear_canvas(last_word_builder_result):
                         drawing_controller.clear(previous_timestamp_ms)
                     continue
-
-            case_action = (
-                case_action_for_key(key)
-                if input_mode_controller.current_mode is DrawingInputMode.CHARACTER
-                else None
-            )
-            if case_action is not None:
-                case_result = case_controller.handle(case_action)
-                last_case_status = case_result.message
-                case_status_expires_at_ms = (
-                    previous_timestamp_ms + case_control_settings.status_display_ms
-                )
-                logger.info("%s", case_result.message)
-                continue
 
             if is_word_backspace_key(key, word_builder_settings.backspace_key):
                 last_word_builder_result = word_builder_controller.backspace()
@@ -913,34 +828,6 @@ def main() -> None:
                         previous_timestamp_ms + settings.save_status_display_ms
                     )
                     if settings.clear_canvas_after_save:
-                        drawing_controller.clear(previous_timestamp_ms)
-                continue
-            if (
-                settings.enable_keyboard_fallback
-                and inference_settings.manual_predict_enabled
-                and input_mode_controller.current_mode is DrawingInputMode.CHARACTER
-                and drawing_controller is not None
-                and is_manual_predict_key(key, inference_settings.manual_predict_key)
-            ):
-                if word_builder.pending_selection is not None:
-                    last_word_builder_result = word_builder.snapshot(
-                        message="Resolve or cancel the pending character before predicting again"
-                    )
-                    word_status_started_ms = previous_timestamp_ms
-                    logger.info("%s", last_word_builder_result.message)
-                    continue
-                prediction_result = completion_coordinator.predict_now(air_canvas)
-                if prediction_result is not None:
-                    last_prediction_result = prediction_result
-                    prediction_display_started_ms = previous_timestamp_ms
-                    logger.info("Manual prediction: %s", prediction_result.message)
-                    last_word_builder_result = word_builder_controller.handle_prediction(
-                        prediction_result
-                    )
-                    word_status_started_ms = previous_timestamp_ms
-                    logger.info("%s", last_word_builder_result.message)
-                    update_case_state_after_word_action(last_word_builder_result, case_state)
-                    if should_auto_clear_canvas(last_word_builder_result):
                         drawing_controller.clear(previous_timestamp_ms)
                 continue
             if (
@@ -1066,51 +953,22 @@ def main() -> None:
                     DrawingState.DONE,
                     previous_timestamp_ms,
                 )
-                if input_mode_controller.current_mode is DrawingInputMode.ISOLATED_WORD:
-                    if whole_word_controller is None or word_writing_region is None:
-                        logger.error("Whole-word prediction is unavailable")
-                    else:
-                        stroke_recorder.end_stroke()
-                        whole_word_controller.recognize(
-                            WordInputSnapshot(
-                                snapshot_id=uuid4().hex,
-                                canvas_image=air_canvas.get_image(copy=True),
-                                strokes=stroke_recorder.snapshot(),
-                                writing_region=word_writing_region,
-                                completed_at_ms=previous_timestamp_ms,
-                            ),
-                            word_case_policy,
-                        )
-                        word_done_handled = True
-                        logger.info("%s", whole_word_controller.last_message)
-                    continue
-                completion_result = completion_coordinator.handle_transition(
-                    controller_result.state,
-                    air_canvas,
-                    allow_prediction=word_builder.pending_selection is None,
-                )
-                if completion_result is not None and completion_result.save_result is not None:
-                    save_result = completion_result.save_result
-                    last_save_result = save_result
-                    save_status_expires_at_ms = (
-                        previous_timestamp_ms + settings.save_status_display_ms
+                if whole_word_controller is None or word_writing_region is None:
+                    logger.error("Whole-word prediction is unavailable")
+                else:
+                    stroke_recorder.end_stroke()
+                    whole_word_controller.recognize(
+                        WordInputSnapshot(
+                            snapshot_id=uuid4().hex,
+                            canvas_image=air_canvas.get_image(copy=True),
+                            strokes=stroke_recorder.snapshot(),
+                            writing_region=word_writing_region,
+                            completed_at_ms=previous_timestamp_ms,
+                        ),
+                        word_case_policy,
                     )
-                    log_save_result(save_result)
-                if (
-                    completion_result is not None
-                    and completion_result.prediction_result is not None
-                ):
-                    last_prediction_result = completion_result.prediction_result
-                    prediction_display_started_ms = previous_timestamp_ms
-                    logger.info("%s", last_prediction_result.message)
-                    last_word_builder_result = word_builder_controller.handle_prediction(
-                        last_prediction_result
-                    )
-                    word_status_started_ms = previous_timestamp_ms
-                    logger.info("%s", last_word_builder_result.message)
-                    update_case_state_after_word_action(last_word_builder_result, case_state)
-                    if should_auto_clear_canvas(last_word_builder_result):
-                        drawing_controller.clear(previous_timestamp_ms)
+                    word_done_handled = True
+                    logger.info("%s", whole_word_controller.last_message)
                 logger.info("Keyboard fallback changed state to DONE")
                 continue
     except (FileNotFoundError, RuntimeError, ValueError) as error:

@@ -41,6 +41,7 @@ artifacts/preprocessing_audit/
 artifacts/word_segmentation_audit/
 data/word_segmentation_eval/
 data/word_trajectory_capture/
+data/learn_english.sqlite3
 artifacts/emnist_letters_identity/**/model.keras
 artifacts/emnist_letters_identity/**/checkpoints/
 artifacts/emnist_letters_identity/**/tensorboard/

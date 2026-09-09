@@ -9,7 +9,7 @@ E02 để dự đoán 26 letter identities; ký tự hoa hoặc thường do cas
 - **Giai đoạn hiện tại:** Local Prototype / EMNIST Migration
 - **Latest technical implementation:** Sprint 11W - Isolated Whole-Word AirWriting
 - **Current product sprint:** Sprint 11W (`Automated complete`, real webcam audit pending)
-- **Next planned product sprint:** Sprint 12E - Translation and Example Generation
+- **Current product direction:** Local Learn English application with isolated whole-word AirWrite input
 - **Last documentation update:** 2026-08-06
 
 | Hạng mục | Trạng thái | Ghi chú |
@@ -30,8 +30,7 @@ E02 để dự đoán 26 letter identities; ký tự hoa hoặc thường do cas
 | Whole-Word AirWriting | Automated complete | Viết cả từ bằng chữ rời, DONE một lần, review và atomic commit; audit webcam còn thiếu |
 | Candidate correction | Implemented | Kết quả `UNCERTAIN` được giữ pending để chọn Top-3 bằng phím `1/2/3` hoặc hủy bằng `X` |
 | EMNIST identity model | Completed baseline | E02 selected; EMNIST test `94.37%`, AirWrite custom `64.12%` |
-| Translation, Example Generation, Vocabulary Storage | Deferred | Thực hiện sau nhánh nâng cấp EMNIST/case; chưa có implementation |
-| Web MVP và deployment | Planned | Chưa có frontend, backend, database hoặc cấu hình deploy |
+| Local Learn English app | In progress | Frontend và backend tách thư mục, chạy local-only |
 
 Sprint 11W đã hoàn thành implementation và kiểm thử tổng hợp. Các kịch bản webcam thật (`cat`, `Cat`,
 `CAT`, `AirWrite`, `apple`, `education`), benchmark thực tế và phiên soak 50 từ vẫn là manual gate.
@@ -78,7 +77,7 @@ không đổi giữa hai mode. Phím mặc định là `L` cho lowercase, `U` ch
   candidate, `G` đổi case, `S` tách segment, `V` gộp segment kế tiếp, `A` accept hoặc `X` cancel.
 - Word Mode hỗ trợ `LOWERCASE`, `UPPERCASE`, `CAPITALIZE_FIRST`, `CUSTOM`; model không tự đoán case.
 - Khi draft hợp lệ, toàn bộ ký tự được commit nguyên tử vào Word Builder. Nhấn Enter riêng để Confirm.
-- Nhấn `R` để trở về Character Mode một ký tự cho mỗi lần DONE.
+- AirWrite luôn chạy ở Isolated Whole-Word Mode; viết các chữ cái rời từ trái sang phải và nhấn `DONE` một lần.
 - Chưa hỗ trợ chữ nối/cursive, nhiều từ trên một canvas, khoảng trắng, số hoặc dấu câu.
 
 ## Tổng quan sản phẩm
@@ -823,8 +822,7 @@ case tại thời điểm prediction. `ConfirmedWord` giữ original form và cu
 
 ### Sprint 11W - Isolated Whole-Word AirWriting
 
-**Mục tiêu:** Thay luồng DONE cho từng chữ bằng khả năng viết một từ gồm các chữ rời và DONE một lần,
-đồng thời giữ nguyên Character Mode.
+**Mục tiêu:** Thay luồng DONE cho từng chữ bằng khả năng viết một từ gồm các chữ rời và DONE một lần.
 
 **Implementation:** Runtime ghi trajectory, giới hạn ROI, phân đoạn bằng component grouping và vertical
 projection, tiền xử lý từng segment theo contract Sprint 8E và gọi model một batch. Người dùng review

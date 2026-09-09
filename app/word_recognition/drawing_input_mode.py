@@ -2,7 +2,6 @@ from enum import StrEnum
 
 
 class DrawingInputMode(StrEnum):
-    CHARACTER = "CHARACTER"
     ISOLATED_WORD = "ISOLATED_WORD"
 
     @classmethod
@@ -13,4 +12,4 @@ class DrawingInputMode(StrEnum):
         try:
             return cls(normalized)
         except ValueError as error:
-            raise ValueError("Drawing input mode must be character or isolated_word") from error
+            raise ValueError("Drawing input mode must be isolated_word") from error

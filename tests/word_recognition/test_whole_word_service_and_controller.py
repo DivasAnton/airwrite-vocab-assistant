@@ -1,10 +1,7 @@
 import numpy as np
-import pytest
-
 from app.inference.prediction_status import PredictionStatus
 from app.word_builder.word_action import WordAction
 from app.word_builder.word_builder import WordBuilder
-from app.word_recognition.drawing_input_mode import DrawingInputMode
 from app.word_recognition.whole_word_controller import WholeWordController
 from app.word_recognition.whole_word_recognition_service import WholeWordRecognitionService
 from app.word_recognition.word_case_policy import WordCasePolicy
@@ -34,16 +31,6 @@ def snapshot() -> WordInputSnapshot:
         WordWritingRegion(0, 0, 100, 50),
         1,
     )
-
-
-def test_recognition_service_rejects_character_mode() -> None:
-    strategy = FakeStrategy(result((prediction_character(0, "a"),)))
-    service = WholeWordRecognitionService(strategy)  # type: ignore[arg-type]
-
-    with pytest.raises(ValueError):
-        service.recognize(snapshot(), DrawingInputMode.CHARACTER, WordCasePolicy.LOWERCASE)
-
-    assert strategy.calls == 0
 
 
 def test_controller_does_not_commit_unresolved_draft() -> None:
