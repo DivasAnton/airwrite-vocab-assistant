@@ -198,16 +198,35 @@ class AirWriteRuntime:
         annotated = self.overlay_renderer.render(annotated, capture.canvas.get_image())
         return {"state": gesture.value, "did_draw": point is not None, "frame": self._encode(annotated)}
 
+    def clear_all(self, session_id: str) -> dict[str, str]:
+        capture = self.captures.get(session_id)
+        if capture is None:
+            return {"status": "cleared"}
+        capture.canvas.clear()
+        capture.recorder.truncate(0)
+        capture.strokes.reset()
+        capture.clear_target_canvas = None
+        capture.clear_target_stroke_count = None
+        capture.previous_point = None
+        capture.stroke_start_canvas = None
+        return {"status": "cleared"}
+
     def clear_to_last_pause(self, session_id: str) -> dict[str, str]:
         capture = self.captures.get(session_id)
         if capture is None:
-            raise ValueError("No camera capture is active")
+            return {"status": "cleared"}
         if capture.clear_target_canvas is not None:
             capture.canvas.get_image(copy=False)[:] = capture.clear_target_canvas
             if capture.clear_target_stroke_count is not None:
                 capture.recorder.truncate(capture.clear_target_stroke_count)
             capture.clear_target_canvas = None
             capture.clear_target_stroke_count = None
+        else:
+            capture.canvas.clear()
+            capture.recorder.truncate(0)
+            capture.strokes.reset()
+            capture.previous_point = None
+            capture.stroke_start_canvas = None
         return {"status": "cleared"}
 
     def finish_camera_capture(self, session_id: str):

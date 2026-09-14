@@ -48,11 +48,11 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
     router = APIRouter()
     recognition: dict[str, dict] = {}
 
-    @router.get("/health")
+    @router.get("/health", tags=["System"])
     def health() -> dict[str, str]:
         return {"status": "ok", "mode": "local", "input": "isolated_whole_word", "airwrite": "ready" if airwrite else "unavailable"}
 
-    @router.get("/camera/settings")
+    @router.get("/camera/settings", tags=["System"])
     def camera_settings() -> dict:
         return {
             "width": settings.camera_width,
@@ -66,20 +66,20 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
             "tracking_confidence": settings.hand_min_tracking_confidence,
         }
 
-    @router.post("/recognition/sessions")
+    @router.post("/recognition/sessions", tags=["Recognition"])
     def start_recognition() -> dict:
         session = {"session_id": uuid4().hex, "mode": "isolated_whole_word", "segments": [], "draft": "", "status": "reviewing"}
         recognition[session["session_id"]] = session
         return session
 
-    @router.get("/recognition/sessions/{session_id}")
+    @router.get("/recognition/sessions/{session_id}", tags=["Recognition"])
     def get_recognition(session_id: str) -> dict:
         session = recognition.get(session_id)
         if session is None:
             raise HTTPException(404, "Recognition session not found")
         return session
 
-    @router.post("/recognition/sessions/{session_id}/segments")
+    @router.post("/recognition/sessions/{session_id}/segments", tags=["Recognition"])
     def add_segment(session_id: str, payload: Segment) -> dict:
         session = recognition.get(session_id)
         if session is None:
@@ -90,7 +90,7 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
         session["draft"] = "".join(segment["prediction"] for segment in session["segments"])
         return item
 
-    @router.post("/recognition/sessions/{session_id}/canvas")
+    @router.post("/recognition/sessions/{session_id}/canvas", tags=["Recognition"])
     def recognize_canvas(session_id: str, payload: CanvasInput) -> dict:
         session = recognition.get(session_id)
         if session is None:
@@ -117,7 +117,7 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
         session["message"] = result.message
         return session
 
-    @router.post("/recognition/sessions/{session_id}/frames")
+    @router.post("/recognition/sessions/{session_id}/frames", tags=["Recognition"])
     def camera_frame(session_id: str, payload: CanvasInput) -> dict:
         if session_id not in recognition:
             raise HTTPException(404, "Recognition session not found")
@@ -128,7 +128,7 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
         except (ValueError, RuntimeError) as error:
             raise HTTPException(422, str(error)) from error
 
-    @router.post("/recognition/sessions/{session_id}/finish")
+    @router.post("/recognition/sessions/{session_id}/finish", tags=["Recognition"])
     def finish_camera(session_id: str) -> dict:
         session = recognition.get(session_id)
         if session is None:
@@ -145,26 +145,45 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
         session["segments"] = [{"position": c.position, "prediction": c.rendered_character, "confidence": c.confidence, "status": c.status.value.lower(), "candidates": [{"label": x.rendered_character, "confidence": x.confidence} for x in c.candidates]} for c in result.characters]
         return session
 
-    @router.post("/recognition/sessions/{session_id}/clear")
+    @router.post("/recognition/sessions/{session_id}/clear", tags=["Recognition"])
     def clear_to_pause(session_id: str) -> dict[str, str]:
         if session_id not in recognition:
             raise HTTPException(404, "Recognition session not found")
         if airwrite is None:
             raise HTTPException(503, "AirWrite model is unavailable")
+        session = recognition[session_id]
+        session["draft"] = ""
+        session["segments"] = []
         try:
             return airwrite.clear_to_last_pause(session_id)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
 
-    @router.patch("/recognition/sessions/{session_id}")
+    @router.post("/recognition/sessions/{session_id}/clear_all", tags=["Recognition"])
+    def clear_all_canvas(session_id: str) -> dict[str, str]:
+        if session_id not in recognition:
+            raise HTTPException(404, "Recognition session not found")
+        if airwrite is None:
+            raise HTTPException(503, "AirWrite model is unavailable")
+        session = recognition[session_id]
+        session["draft"] = ""
+        session["segments"] = []
+        try:
+            return airwrite.clear_all(session_id)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
+    @router.patch("/recognition/sessions/{session_id}", tags=["Recognition"])
     def update_draft(session_id: str, payload: Draft) -> dict:
         session = recognition.get(session_id)
         if session is None:
             raise HTTPException(404, "Recognition session not found")
         session["draft"] = payload.draft
+        for seg in session.get("segments", []):
+            seg["status"] = "accepted"
         return session
 
-    @router.post("/recognition/sessions/{session_id}/commit")
+    @router.post("/recognition/sessions/{session_id}/commit", tags=["Recognition"])
     def commit(session_id: str) -> dict:
         session = recognition.get(session_id)
         if session is None:
@@ -177,14 +196,14 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
         session.update(status="committed", word=word)
         return {"session_id": session_id, "word": word, "entry": database.vocabulary(word)}
 
-    @router.get("/dictionary/{word}")
+    @router.get("/dictionary/{word}", tags=["Dictionary"])
     def dictionary(word: str) -> dict:
         entry = database.vocabulary(word)
         if entry is None:
             raise HTTPException(404, "Dictionary entry not found")
         return entry
 
-    @router.post("/vocabulary/{word}/save")
+    @router.post("/vocabulary/{word}/save", tags=["Dictionary"])
     def save_word(word: str) -> dict:
         entry = database.vocabulary(word)
         if entry is None:
@@ -192,12 +211,12 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
         database.save(entry["id"])
         return {"saved": True, "word": entry["normalized_word"]}
 
-    @router.get("/vocabulary")
+    @router.get("/vocabulary", tags=["Dictionary"])
     def saved_words() -> list[dict]:
         rows = database.connection.execute("SELECT v.* FROM vocabulary v JOIN saved_vocabulary s ON s.vocabulary_id=v.id ORDER BY s.saved_at DESC").fetchall()
         return [database.vocabulary(row["normalized_word"]) for row in rows]
 
-    @router.get("/collections")
+    @router.get("/collections", tags=["Collections"])
     def collections(category: str | None = None) -> list[dict]:
         query = "SELECT * FROM collections"
         params: tuple = ()
@@ -206,7 +225,7 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
             params = (category,)
         return [dict(row) for row in database.connection.execute(query + " ORDER BY category, name", params).fetchall()]
 
-    @router.get("/collections/{collection_id}")
+    @router.get("/collections/{collection_id}", tags=["Collections"])
     def collection(collection_id: int) -> dict:
         row = database.connection.execute("SELECT * FROM collections WHERE id=?", (collection_id,)).fetchone()
         if row is None:
@@ -214,18 +233,18 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
         words = database.connection.execute("SELECT v.normalized_word FROM vocabulary v JOIN collection_items i ON i.vocabulary_id=v.id WHERE i.collection_id=? ORDER BY i.position", (collection_id,)).fetchall()
         return {**dict(row), "vocabulary": [database.vocabulary(item["normalized_word"]) for item in words]}
 
-    @router.post("/learning/sessions")
+    @router.post("/learning/sessions", tags=["Learning"])
     def create_learning(payload: LearningInput) -> dict:
         session_id = uuid4().hex
         database.connection.execute("INSERT INTO learning_sessions (id, collection_id, mode, created_at) VALUES (?, ?, ?, ?)", (session_id, payload.collection_id, payload.mode, utc_now()))
         database.connection.commit()
         return learning_state(database, session_id)
 
-    @router.get("/learning/sessions/{session_id}")
+    @router.get("/learning/sessions/{session_id}", tags=["Learning"])
     def get_learning(session_id: str) -> dict:
         return learning_state(database, session_id)
 
-    @router.post("/learning/sessions/{session_id}/answer")
+    @router.post("/learning/sessions/{session_id}/answer", tags=["Learning"])
     def answer_learning(session_id: str, payload: Answer) -> dict:
         state = learning_state(database, session_id)
         question = state["question"]
@@ -238,7 +257,7 @@ def create_router(database: Database, airwrite: AirWriteRuntime | None = None) -
         database.connection.commit()
         return {"correct": correct, "expected": expected, "answer": payload.answer, "session": learning_state(database, session_id)}
 
-    @router.get("/progress")
+    @router.get("/progress", tags=["Learning"])
     def progress() -> list[dict]:
         return [dict(row) for row in database.connection.execute("SELECT p.*, v.word FROM progress p JOIN vocabulary v ON v.id=p.vocabulary_id ORDER BY p.mastery DESC, v.word").fetchall()]
 

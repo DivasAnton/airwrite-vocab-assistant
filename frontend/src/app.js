@@ -5,7 +5,7 @@
 
 /* ═══════════════════════ CORE UTILITIES ═══════════════════════ */
 
-const API = 'http://127.0.0.1:8765/api';
+const API = '/api';
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => document.querySelectorAll(selector);
 
@@ -26,21 +26,44 @@ function highlightExample(sentence, word) {
   return sentence.replace(regex, '<strong>$1</strong>');
 }
 
-// Generate cloze template: hide ~40% of letters at non-consecutive positions
+// Generate cloze template: hide 1-3 letters depending on word length
 function makeClozeTemplate(word) {
-  const letters = word.split('');
-  const count = Math.max(1, Math.round(letters.length * 0.4));
-  // Pick positions to hide (avoid first and last for readability)
-  const pool = letters.map((_, i) => i).filter(i => i > 0 && i < letters.length - 1);
-  const shuffled = pool.sort(() => Math.random() - 0.5).slice(0, count);
-  const hidden = new Set(shuffled);
-  return letters.map((ch, i) => ({ ch, hidden: hidden.has(i) }));
+  const letters = (word || '').split('');
+  const n = letters.length;
+  let blankCount = 1;
+  if (n >= 4 && n <= 6) blankCount = 2;
+  else if (n > 6) blankCount = Math.min(4, Math.max(2, Math.round(n * 0.35)));
+
+  let pool = [];
+  if (n <= 2) {
+    pool = [n - 1];
+  } else if (n === 3) {
+    pool = [1];
+  } else {
+    for (let i = 1; i < n - 1; i++) pool.push(i);
+  }
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  const hiddenIndices = new Set(shuffled.slice(0, blankCount).sort((a, b) => a - b));
+
+  let blankCounter = 0;
+  return letters.map((ch, i) => {
+    const isHidden = hiddenIndices.has(i);
+    return {
+      ch,
+      hidden: isHidden,
+      blankIndex: isHidden ? blankCounter++ : null,
+    };
+  });
 }
 
 /* ═══════════════════════ CAMERA MODULE ════════════════════════ */
 
 let stream = null;
 let frameTimer = null;
+let reviewTimer = null;
+let isReviewEvaluating = false;
+let reviewEvaluated = false;
+let lastReviewGesture = null;
 let frameCanvas = document.createElement('canvas');
 let frameCtx = frameCanvas.getContext('2d');
 let cameraContract = { width: 1280, height: 720, fps: 30, mirror: true };
@@ -69,7 +92,7 @@ async function startCamera(videoEl) {
   stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
-      width:  { ideal: cameraContract.width },
+      width: { ideal: cameraContract.width },
       height: { ideal: cameraContract.height },
       frameRate: { ideal: cameraContract.fps, max: cameraContract.fps },
       facingMode: 'user',
@@ -77,58 +100,114 @@ async function startCamera(videoEl) {
   });
   videoEl.srcObject = stream;
   const actual = stream.getVideoTracks()[0]?.getSettings() || {};
-  frameCanvas.width  = actual.width  || cameraContract.width;
+  frameCanvas.width = actual.width || cameraContract.width;
   frameCanvas.height = actual.height || cameraContract.height;
   return actual;
 }
 
 function stopCamera() {
-  clearInterval(frameTimer);
+  if (frameTimer) {
+    clearInterval(frameTimer);
+    frameTimer = null;
+  }
+  if (reviewTimer) {
+    clearInterval(reviewTimer);
+    reviewTimer = null;
+  }
   stream?.getTracks().forEach(t => t.stop());
   stream = null;
   const cam = $('#camera');
   if (cam) cam.srcObject = null;
 }
 
+function stopTranslateCamera() {
+  if (frameTimer) {
+    clearInterval(frameTimer);
+    frameTimer = null;
+  }
+  stopCamera();
+  translateSession = null;
+  $('#start-camera')?.classList.remove('hidden');
+  $('#stop-camera')?.classList.add('hidden');
+  $('#airwrite-frame')?.classList.add('hidden');
+  $('#camera-placeholder')?.classList.remove('hidden');
+  const statusEl = $('#camera-status');
+  if (statusEl) statusEl.textContent = 'Camera đã tắt.';
+  const dot = $('#gesture-dot');
+  if (dot) dot.className = 'gesture-dot';
+  const label = $('#gesture-label');
+  if (label) label.textContent = 'Chưa phát hiện tay';
+}
+
+function stopReviewCamera() {
+  if (reviewTimer) {
+    clearInterval(reviewTimer);
+    reviewTimer = null;
+  }
+  isReviewEvaluating = false;
+  reviewEvaluated = false;
+  lastReviewGesture = null;
+  stopCamera();
+  if (reviewSession) {
+    api(`/recognition/sessions/${reviewSession.session_id}/clear_all`, { method: 'POST' }).catch(() => {});
+  }
+  reviewSession = null;
+  $('#review-airwrite-frame')?.classList.add('hidden');
+  $('#review-cam-placeholder')?.classList.remove('hidden');
+  $('#review-start-camera')?.classList.remove('hidden');
+  $('#review-done')?.classList.add('hidden');
+  $('#review-clear')?.classList.add('hidden');
+  const statusEl = $('#review-status');
+  if (statusEl) statusEl.textContent = 'Camera chưa bật.';
+}
+
 /* ═════════════════════ TRANSLATE MODULE ═══════════════════════ */
 
 let translateSession = null;
 let lastWord = '';
+let isTranslateEvaluating = false;
+let lastTranslateGesture = null;
 
 // Gesture → visual indicator
 function updateGestureUI(state, didDraw) {
-  const dot   = $('#gesture-dot');
+  const dot = $('#gesture-dot');
   const label = $('#gesture-label');
   if (!dot || !label) return;
 
   const MAP = {
-    NO_HAND:    ['', 'Chưa phát hiện tay'],
-    UNKNOWN:    ['', 'Cử chỉ không xác định'],
+    NO_HAND: ['', 'Chưa phát hiện tay'],
+    UNKNOWN: ['', 'Cử chỉ không xác định'],
     INDEX_ONLY: [didDraw ? 'drawing' : 'drawing', 'Đang vẽ… (ngón trỏ)'],
-    TWO_FINGERS:['paused', '✌️ Pause — chuyển chữ tiếp theo'],
-    OPEN_PALM:  ['', 'Xòe bàn tay (chưa sử dụng)'],
-    FIST:       ['done', '✊ Nắm tay → Tự động Done!'],
+    TWO_FINGERS: ['paused', '✌️ Pause — chuyển chữ tiếp theo'],
+    OPEN_PALM: ['', 'Xòe bàn tay (chưa sử dụng)'],
+    FIST: ['done', '✊ Nắm tay → Tự động Done!'],
   };
   const [dotClass, text] = MAP[state] || ['', state];
   dot.className = 'gesture-dot' + (dotClass ? ` ${dotClass}` : '');
   label.textContent = text;
 
-  // FIST gesture auto-triggers Done
-  if (state === 'FIST') {
-    triggerDone();
+  // FIST gesture auto-triggers Done only once on edge transition
+  if (state === 'FIST' && lastTranslateGesture !== 'FIST') {
+    if (!isTranslateEvaluating) {
+      triggerDone();
+    }
   }
+  lastTranslateGesture = state;
 }
 
 async function triggerDone() {
-  const draftEl       = $('#draft');
-  const draftPhEl     = $('#draft-placeholder');
-  const candidatesEl  = $('#candidates');
-  const commitBtn     = $('#commit');
+  const draftEl = $('#draft');
+  const draftPhEl = $('#draft-placeholder');
+  const candidatesEl = $('#candidates');
+  const commitBtn = $('#commit');
 
-  if (!translateSession) return;
+  if (!translateSession || isTranslateEvaluating) return;
+  isTranslateEvaluating = true;
   try {
-    draftEl.textContent = '';
-    if (draftPhEl) draftPhEl.textContent = 'Đang nhận diện chữ bằng AI…';
+    if (draftPhEl) {
+      draftPhEl.textContent = 'Đang nhận diện chữ bằng AI…';
+      draftPhEl.style.display = 'block';
+    }
     const result = await api(`/recognition/sessions/${translateSession.session_id}/finish`, {
       method: 'POST',
     });
@@ -140,19 +219,24 @@ async function triggerDone() {
 
     renderCandidateChips(result.segments || [], candidatesEl);
 
-    const hasUncertain = (result.segments || []).some(s => s.status === 'uncertain');
-    const showCommit = !!word && !hasUncertain;
-    commitBtn?.classList.toggle('hidden', !showCommit);
+    // Show commit button whenever a word is recognized
+    commitBtn?.classList.toggle('hidden', !word);
   } catch (err) {
     if (draftPhEl) draftPhEl.textContent = err.message;
+  } finally {
+    isTranslateEvaluating = false;
   }
 }
 
 function renderCandidateChips(segments, container) {
   if (!container) return;
-  container.innerHTML = segments.map(seg => {
-    const pct  = Math.round(seg.confidence * 100);
-    const cls  = seg.status === 'uncertain' ? 'uncertain' : 'accepted';
+  container.innerHTML = segments.map((seg, segIdx) => {
+    const pct = Math.round(seg.confidence * 100);
+    const cls = seg.status === 'uncertain' ? 'uncertain' : 'accepted';
+    const otherCandidates = (seg.candidates || []).filter(c => c.label !== seg.prediction);
+    const candBtns = otherCandidates.map(c => `
+      <button class="candidate-alt-btn" data-seg-idx="${segIdx}" data-letter="${c.label}" title="Đổi thành '${c.label}' (${Math.round(c.confidence * 100)}%)">${c.label}</button>
+    `).join('');
     return `
       <div class="candidate-chip ${cls}">
         <span class="letter">${seg.prediction}</span>
@@ -160,8 +244,34 @@ function renderCandidateChips(segments, container) {
         <div class="conf-bar">
           <div class="conf-bar-fill" style="width:${pct}%"></div>
         </div>
+        ${candBtns ? `<div class="candidate-alts">${candBtns}</div>` : ''}
       </div>`;
   }).join('');
+
+  container.querySelectorAll('.candidate-alt-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const segIdx = parseInt(btn.dataset.segIdx, 10);
+      const newChar = btn.dataset.letter;
+      if (!translateSession || !translateSession.segments) return;
+      if (translateSession.segments[segIdx]) {
+        translateSession.segments[segIdx].prediction = newChar;
+        translateSession.segments[segIdx].status = 'accepted';
+      }
+      const newDraft = translateSession.segments.map(s => s.prediction).join('');
+      translateSession.draft = newDraft;
+      const draftEl = $('#draft');
+      if (draftEl) draftEl.textContent = newDraft;
+      renderCandidateChips(translateSession.segments, container);
+      try {
+        await api(`/recognition/sessions/${translateSession.session_id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ draft: newDraft }),
+        });
+      } catch { }
+      $('#commit')?.classList.remove('hidden');
+    });
+  });
 }
 
 function renderTranslation(entry) {
@@ -181,11 +291,11 @@ function renderTranslation(entry) {
     return;
   }
 
-  const pos       = entry.part_of_speech || '';
-  const synonyms  = (entry.synonyms  || []).map(w => `<span class="word-tag synonym">${w}</span>`).join('');
-  const antonyms  = (entry.antonyms  || []).map(w => `<span class="word-tag antonym">${w}</span>`).join('');
-  const example   = entry.examples?.[0] || '';
-  const exHtml    = example ? highlightExample(example, entry.word) : '<em>Chưa có ví dụ.</em>';
+  const pos = entry.part_of_speech || '';
+  const synonyms = (entry.synonyms || []).map(w => `<span class="word-tag synonym">${w}</span>`).join('');
+  const antonyms = (entry.antonyms || []).map(w => `<span class="word-tag antonym">${w}</span>`).join('');
+  const example = entry.examples?.[0] || '';
+  const exHtml = example ? highlightExample(example, entry.word) : '<em>Chưa có ví dụ.</em>';
 
   panel.innerHTML = `
     <div class="translation-card" style="animation: slideUp 0.4s ease;">
@@ -253,37 +363,81 @@ function renderTranslation(entry) {
 /* ═══════════════ REVIEW MODULE (Spell + Cloze) ════════════════ */
 
 let reviewSession = null;
-let reviewStream  = null;
-let reviewTimer   = null;
-let reviewMode    = 'spell';   // 'spell' | 'cloze'
+let reviewStream = null;
+let reviewMode = 'spell';   // 'spell' | 'cloze'
 let currentReviewWord = null;  // full vocabulary entry
-let clozeTemplate = [];        // [{ch, hidden}]
-let clozeFilled   = [];        // filled characters for blank positions
-let clozeBlankIdx = 0;         // which blank we're filling next
-let spellLetters  = [];        // accumulated letters for spell mode
+let clozeTemplate = [];        // [{ch, hidden, blankIndex}]
+let clozeFilled = [];          // filled characters for blank positions
+let spellLetters = [];         // recognized letters for spell mode
+let reviewWordList = [];       // loaded review vocabulary list
 
-// Switch review mode
+// Switch review mode with complete canvas & state reset
+async function switchReviewMode(newMode) {
+  if (reviewMode === newMode && currentReviewWord && !$('#review-session')?.classList.contains('hidden')) {
+    return;
+  }
+  reviewMode = newMode;
+  $$('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === reviewMode));
+  updateReviewModeUI();
+
+  // Reset backend canvas completely to wipe out any drawing
+  if (reviewSession) {
+    try {
+      await api(`/recognition/sessions/${reviewSession.session_id}/clear_all`, { method: 'POST' });
+    } catch (e) {
+      console.warn('Canvas clear on mode switch failed:', e);
+    }
+  }
+
+  // Clear internal state & overlays
+  isReviewEvaluating = false;
+  reviewEvaluated = false;
+  lastReviewGesture = null;
+  spellLetters = [];
+  clozeFilled = [];
+
+  const liveEl = $('#live-letters-overlay');
+  if (liveEl) liveEl.innerHTML = '';
+
+  const feedback = $('#review-feedback');
+  if (feedback) { feedback.classList.add('hidden'); feedback.innerHTML = ''; }
+  $('#review-next')?.classList.add('hidden');
+
+  if (currentReviewWord) {
+    if (reviewMode === 'cloze') {
+      clozeTemplate = makeClozeTemplate(currentReviewWord.word);
+      renderClozeDisplay(false);
+    } else {
+      const clozeContainer = $('#cloze-word');
+      if (clozeContainer) clozeContainer.innerHTML = '';
+    }
+    const statusEl = $('#review-status');
+    if (statusEl && reviewSession) {
+      statusEl.textContent = `Chế độ: ${reviewMode === 'cloze' ? 'Cloze (Đục lỗ)' : 'AirWrite Spell'} — Canvas đã làm mới.`;
+    }
+  }
+}
+
 $$('.mode-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    $$('.mode-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    reviewMode = btn.dataset.mode;
-    updateReviewModeUI();
-    if (currentReviewWord) startReviewSession(currentReviewWord);
+  btn.addEventListener('click', async () => {
+    await switchReviewMode(btn.dataset.mode);
   });
 });
 
 function updateReviewModeUI() {
   const isCloze = reviewMode === 'cloze';
-  const panelTitle  = $('#review-panel-title');
-  const modeBadge   = $('#review-mode-badge');
-  const clozeDiv    = $('#cloze-display');
-  const spellHint   = $('#spell-hint');
+  const panelTitle = $('#review-panel-title');
+  const modeBadge = $('#review-mode-badge');
+  const clozeDiv = $('#cloze-display');
+  const spellHint = $('#spell-hint');
 
-  if (panelTitle)  panelTitle.textContent = isCloze ? '🧩 Cloze Mode' : '✍️ AirWrite Spell';
-  if (modeBadge)   modeBadge.textContent  = isCloze ? 'CLOZE' : 'SPELL';
-  if (clozeDiv)    clozeDiv.classList.toggle('hidden', !isCloze);
-  if (spellHint)   spellHint.classList.toggle('hidden', isCloze);
+  if (panelTitle) panelTitle.textContent = isCloze ? '🧩 Cloze Mode (Đục lỗ)' : '✍️ AirWrite Spell';
+  if (modeBadge) modeBadge.textContent = isCloze ? 'CLOZE' : 'SPELL';
+  if (clozeDiv) clozeDiv.classList.toggle('hidden', !isCloze);
+  if (spellHint) {
+    spellHint.classList.toggle('hidden', isCloze);
+    spellHint.textContent = 'Viết toàn bộ chữ cái tiếng Anh vào không khí bằng ngón trỏ. Khi viết xong, nhấn nút ✔ Done (hoặc nắm tay ✊) để kiểm tra kết quả.';
+  }
 }
 
 async function loadReview() {
@@ -291,6 +445,7 @@ async function loadReview() {
   if (!listEl) return;
   try {
     const words = await api('/vocabulary');
+    reviewWordList = words;
     listEl.innerHTML = words.length
       ? words.map(word => `
           <article class="card" data-word="${word.normalized_word}">
@@ -328,54 +483,83 @@ function openReviewSession(wordEntry) {
   startReviewSession(wordEntry);
 }
 
-function startReviewSession(wordEntry) {
-  spellLetters  = [];
+async function startReviewSession(wordEntry) {
+  currentReviewWord = wordEntry;
+  isReviewEvaluating = false;
+  reviewEvaluated = false;
+  lastReviewGesture = null;
+  spellLetters = [];
   clozeTemplate = makeClozeTemplate(wordEntry.word);
-  clozeFilled   = [];
-  clozeBlankIdx = 0;
+  clozeFilled = [];
+
+  // Reset backend canvas if session is already running
+  if (reviewSession) {
+    try {
+      await api(`/recognition/sessions/${reviewSession.session_id}/clear_all`, { method: 'POST' });
+    } catch { }
+  }
 
   // Show Vietnamese prompt
   const vnEl = $('#vn-prompt-word');
   if (vnEl) vnEl.textContent = wordEntry.vietnamese_meaning;
 
-  // Show/hide English word (only in cloze)
+  // Always keep English word hidden during testing
   const enEl = $('#review-word-english');
-  if (enEl) {
-    enEl.textContent = reviewMode === 'cloze' ? wordEntry.word : '';
-    enEl.classList.toggle('hidden', reviewMode !== 'cloze');
-  }
+  if (enEl) enEl.classList.add('hidden');
 
-  // Clear live letters
+  // Clear live overlay
   const liveEl = $('#live-letters-overlay');
   if (liveEl) liveEl.innerHTML = '';
 
-  // Render cloze word
-  if (reviewMode === 'cloze') renderClozeDisplay();
+  // Render cloze if in cloze mode
+  if (reviewMode === 'cloze') {
+    renderClozeDisplay(false);
+  } else {
+    const clozeContainer = $('#cloze-word');
+    if (clozeContainer) clozeContainer.innerHTML = '';
+  }
 
-  // Show done button when camera starts
   updateReviewModeUI();
 
   const feedback = $('#review-feedback');
   if (feedback) { feedback.classList.add('hidden'); feedback.innerHTML = ''; }
-  $('#review-done')?.classList.add('hidden');
-  $('#review-clear')?.classList.add('hidden');
   $('#review-next')?.classList.add('hidden');
+
+  if (reviewSession) {
+    $('#review-done')?.classList.remove('hidden');
+    $('#review-clear')?.classList.remove('hidden');
+  }
 }
 
-function renderClozeDisplay() {
+function renderClozeDisplay(evaluated = false) {
   const container = $('#cloze-word');
   if (!container) return;
-  container.innerHTML = clozeTemplate.map((item, i) => {
-    const blanks = clozeTemplate.filter(x => x.hidden);
-    const blankIdx = blanks.findIndex((_, bi) => clozeTemplate.indexOf(blanks[bi]) === i);
+  const blanks = clozeTemplate.filter(x => x.hidden);
+
+  const hintEl = $('#cloze-display .hint-text');
+  if (hintEl) {
+    hintEl.innerHTML = `Từ bị đục lỗ — hãy viết <strong>${blanks.length} chữ cái còn thiếu</strong> vào không khí rồi nhấn <strong>✔ Done</strong>:`;
+  }
+
+  container.innerHTML = clozeTemplate.map(item => {
     if (!item.hidden) {
       return `<div class="cloze-letter shown">${item.ch}</div>`;
     }
-    const filled = clozeFilled[blankIdx];
-    if (filled !== undefined) {
-      return `<div class="cloze-letter filled">${filled}</div>`;
+    const filledChar = clozeFilled[item.blankIndex] || '';
+    if (!evaluated) {
+      if (filledChar) {
+        return `<div class="cloze-letter filled">${filledChar}</div>`;
+      }
+      return `<div class="cloze-letter blank">_</div>`;
     }
-    return `<div class="cloze-letter blank"></div>`;
+    // Evaluated: strictly check match
+    const expectedChar = item.ch.toLowerCase();
+    const isMatch = filledChar.toLowerCase() === expectedChar;
+    if (isMatch) {
+      return `<div class="cloze-letter correct" title="Chính xác">${filledChar}</div>`;
+    } else {
+      return `<div class="cloze-letter wrong" title="Đúng là: ${item.ch}">${filledChar || '∅'}</div>`;
+    }
   }).join('');
 }
 
@@ -403,8 +587,13 @@ $('#review-start-camera')?.addEventListener('click', async () => {
         statusEl.textContent = `AirWrite: ${frame.state}`;
       },
       onGesture: (state, didDraw) => {
-        // OPEN_PALM auto-trigger done in review
-        if (state === 'OPEN_PALM') triggerReviewDone();
+        // FIST gesture triggers Done only once on edge transition and only if not yet evaluated
+        if (state === 'FIST' && lastReviewGesture !== 'FIST') {
+          if (!isReviewEvaluating && !reviewEvaluated) {
+            triggerReviewDone();
+          }
+        }
+        lastReviewGesture = state;
       },
       onError: (msg) => { statusEl.textContent = msg; },
     });
@@ -421,145 +610,194 @@ $('#review-start-camera')?.addEventListener('click', async () => {
 $('#review-clear')?.addEventListener('click', async () => {
   if (!reviewSession) return;
   try {
-    await api(`/recognition/sessions/${reviewSession.session_id}/clear`, { method: 'POST' });
-    // In spell mode, remove last letter from overlay
-    if (reviewMode === 'spell' && spellLetters.length > 0) {
-      spellLetters.pop();
-      renderSpellOverlay();
-    }
-    // In cloze mode, undo last fill
-    if (reviewMode === 'cloze' && clozeFilled.length > 0) {
-      clozeFilled.pop();
-      if (clozeBlankIdx > 0) clozeBlankIdx--;
-      renderClozeDisplay();
-    }
+    await api(`/recognition/sessions/${reviewSession.session_id}/clear_all`, { method: 'POST' });
   } catch (err) {
     console.warn('Clear error:', err);
   }
+  isReviewEvaluating = false;
+  reviewEvaluated = false;
+  lastReviewGesture = null;
+  spellLetters = [];
+  clozeFilled = [];
+
+  const liveEl = $('#live-letters-overlay');
+  if (liveEl) liveEl.innerHTML = '';
+
+  if (reviewMode === 'cloze') {
+    renderClozeDisplay(false);
+  }
+
+  const feedback = $('#review-feedback');
+  if (feedback) { feedback.classList.add('hidden'); feedback.innerHTML = ''; }
+  $('#review-next')?.classList.add('hidden');
+
+  const s = $('#review-status');
+  if (s) s.textContent = 'Đã xóa toàn bộ nét vẽ. Bạn có thể viết lại.';
 });
 
 $('#review-done')?.addEventListener('click', triggerReviewDone);
 
 async function triggerReviewDone() {
-  if (!reviewSession) return;
+  if (!reviewSession || isReviewEvaluating || reviewEvaluated) return;
+  isReviewEvaluating = true;
+  const doneBtn = $('#review-done');
+  if (doneBtn) doneBtn.disabled = true;
+  const statusEl = $('#review-status');
   try {
+    if (statusEl) statusEl.textContent = 'Đang nhận diện chữ viết qua AI…';
     const result = await api(`/recognition/sessions/${reviewSession.session_id}/finish`, {
       method: 'POST',
     });
     reviewSession = result;
-    const letter = result.draft?.slice(-1) || '';
+    const recognized = (result.draft || '').trim().toLowerCase();
+
+    reviewEvaluated = true;
 
     if (reviewMode === 'spell') {
-      if (letter) {
-        spellLetters.push(letter);
-        renderSpellOverlay();
-      }
-      // Auto-evaluate when word length matches
-      if (currentReviewWord && spellLetters.length >= currentReviewWord.word.length) {
-        evaluateSpell();
-      }
+      evaluateSpell(recognized);
     } else if (reviewMode === 'cloze') {
-      // Fill next blank
-      const blanks = clozeTemplate.filter(x => x.hidden);
-      if (letter && clozeBlankIdx < blanks.length) {
-        clozeFilled[clozeBlankIdx] = letter;
-        clozeBlankIdx++;
-        renderClozeDisplay();
-      }
-      // Auto-evaluate when all blanks filled
-      if (clozeBlankIdx >= blanks.length) {
-        evaluateCloze();
-      }
+      evaluateCloze(recognized, result.segments || []);
     }
+    if (statusEl) statusEl.textContent = `Nhận diện: "${recognized || '(trống)'}"`;
   } catch (err) {
-    const s = $('#review-status');
-    if (s) s.textContent = err.message;
+    if (statusEl) statusEl.textContent = `Lỗi nhận diện: ${err.message}`;
+  } finally {
+    isReviewEvaluating = false;
+    if (doneBtn) doneBtn.disabled = false;
   }
 }
 
-function renderSpellOverlay() {
+function evaluateSpell(recognized) {
+  if (!currentReviewWord) return;
+  const expected = (currentReviewWord.word || '').trim().toLowerCase();
+  const correct = recognized.length > 0 && recognized === expected;
+
+  // Build letter-by-letter diff comparison boxes
+  const expChars = expected.split('');
+  const recChars = (recognized || '').split('');
+  const maxLen = Math.max(expChars.length, recChars.length);
+  const diffBoxes = [];
+
+  for (let i = 0; i < maxLen; i++) {
+    const exp = expChars[i] || '';
+    const rec = recChars[i] || '';
+    const isMatch = exp.toLowerCase() === rec.toLowerCase();
+    diffBoxes.push(`
+      <div class="spell-compare-box ${isMatch ? 'correct' : 'wrong'}">
+        <span class="expected-char">${exp || '—'}</span>
+        ${!isMatch ? `<span class="actual-char">${rec || '∅'}</span>` : ''}
+      </div>
+    `);
+  }
+
+  const diffHtml = `<div class="spell-compare-row">${diffBoxes.join('')}</div>`;
+
+  // Render bottom overlay on camera
   const overlay = $('#live-letters-overlay');
-  if (!overlay) return;
-  overlay.innerHTML = spellLetters.map(ch =>
-    `<div class="live-letter">${ch}</div>`
-  ).join('');
-}
+  if (overlay) {
+    overlay.innerHTML = (recognized ? recognized.split('') : []).map((ch, i) => {
+      const match = (expected[i] || '').toLowerCase() === ch.toLowerCase();
+      return `<div class="live-letter ${match ? 'correct' : 'wrong'}">${ch}</div>`;
+    }).join('');
+  }
 
-function evaluateSpell() {
-  if (!currentReviewWord) return;
-  const written   = spellLetters.join('').toLowerCase();
-  const expected  = currentReviewWord.word.toLowerCase();
-  const correct   = written === expected;
-  showReviewFeedback(correct, expected, written);
-}
-
-function evaluateCloze() {
-  if (!currentReviewWord) return;
-  const blanks  = clozeTemplate.filter(x => x.hidden);
-  let allCorrect = true;
-
-  // Color each filled blank
-  const container = $('#cloze-word');
-  const blankEls  = container?.querySelectorAll('.cloze-letter.filled') || [];
-  blankEls.forEach((el, i) => {
-    const expected = blanks[i]?.ch.toLowerCase() || '';
-    const filled   = (clozeFilled[i] || '').toLowerCase();
-    const ok = filled === expected;
-    el.classList.remove('filled');
-    el.classList.add(ok ? 'correct' : 'wrong');
-    if (!ok) allCorrect = false;
+  showReviewFeedback({
+    correct,
+    expected: currentReviewWord.word,
+    written: recognized,
+    mode: 'spell',
+    diffHtml,
   });
-
-  showReviewFeedback(allCorrect, currentReviewWord.word, clozeFilled.join(''));
 }
 
-function showReviewFeedback(correct, expected, written) {
+function evaluateCloze(recognized, segments = []) {
+  if (!currentReviewWord) return;
+  const blanks = clozeTemplate.filter(x => x.hidden);
+
+  // Extract written characters from draft or segment predictions
+  let writtenChars = (recognized || '').split('').filter(c => c.trim().length > 0);
+  if (writtenChars.length === 0 && segments.length > 0) {
+    writtenChars = segments.map(s => (s.prediction || '').toLowerCase()).filter(Boolean);
+  }
+
+  // Map to blank positions
+  clozeFilled = blanks.map((_, i) => writtenChars[i] || '');
+
+  // Render blanks with evaluated colors (green for correct, red for wrong)
+  renderClozeDisplay(true);
+
+  // STRICT check: EVERY single blank must be non-empty and match expected character
+  const hasEmpty = clozeFilled.length < blanks.length || clozeFilled.some(c => !c);
+  const allCorrect = !hasEmpty && blanks.every((b, idx) => (clozeFilled[idx] || '').toLowerCase() === b.ch.toLowerCase());
+
+  showReviewFeedback({
+    correct: allCorrect,
+    expected: currentReviewWord.word,
+    written: clozeFilled.filter(Boolean).join(''),
+    mode: 'cloze',
+  });
+}
+
+function showReviewFeedback({ correct, expected, written, mode, diffHtml = '' }) {
   const feedback = $('#review-feedback');
   if (!feedback) return;
   feedback.classList.remove('hidden');
+
   feedback.innerHTML = `
     <div class="result-banner ${correct ? 'correct' : 'wrong'}">
       <span class="icon">${correct ? '🎉' : '❌'}</span>
-      <div>
+      <div style="flex:1;">
         <div class="text">${correct ? 'Chính xác!' : 'Chưa đúng'}</div>
-        ${!correct ? `<div class="detail">Bạn viết: <strong>${written}</strong> — Đúng là: <strong>${expected}</strong></div>` : ''}
+        ${!correct
+          ? `<div class="detail">Bạn ${mode === 'cloze' ? 'điền' : 'viết'}: <strong style="color:var(--rose)">${written || '(chưa có)'}</strong> — Từ đúng là: <strong style="color:var(--emerald)">${expected}</strong></div>`
+          : `<div class="detail">Từ chính xác: <strong style="color:var(--emerald)">${expected}</strong></div>`
+        }
+        ${diffHtml ? `<div style="margin-top:10px;">${diffHtml}</div>` : ''}
       </div>
     </div>`;
   $('#review-next')?.classList.remove('hidden');
 }
 
 $('#review-next')?.addEventListener('click', () => {
-  // Reset for next attempt of same word
-  startReviewSession(currentReviewWord);
-  spellLetters = [];
-  renderSpellOverlay();
-  $('#review-feedback').classList.add('hidden');
-  $('#review-next')?.classList.add('hidden');
+  isReviewEvaluating = false;
+  reviewEvaluated = false;
+  lastReviewGesture = null;
+  // Move to next word in collection or review list, or re-run
+  let nextWord = null;
+  if (currentCollection?.vocabulary?.length > 0 && currentReviewWord) {
+    const idx = currentCollection.vocabulary.findIndex(w => w.normalized_word === currentReviewWord.normalized_word);
+    if (idx !== -1) {
+      nextWord = currentCollection.vocabulary[(idx + 1) % currentCollection.vocabulary.length];
+    }
+  }
+  if (!nextWord && reviewWordList?.length > 0 && currentReviewWord) {
+    const idx = reviewWordList.findIndex(w => w.normalized_word === currentReviewWord.normalized_word);
+    if (idx !== -1) {
+      nextWord = reviewWordList[(idx + 1) % reviewWordList.length];
+    }
+  }
+  if (nextWord) {
+    openReviewSession(nextWord);
+  } else if (currentReviewWord) {
+    startReviewSession(currentReviewWord);
+  }
 });
 
-$('#review-back')?.addEventListener('click', () => {
-  // Stop review camera
-  clearInterval(reviewTimer);
-  reviewTimer = null;
-  stopCamera();
-  // Reset session UI
-  reviewSession = null;
+$('#review-back')?.addEventListener('click', async () => {
+  stopReviewCamera();
   currentReviewWord = null;
   spellLetters = [];
+  clozeFilled = [];
   $('#review-session')?.classList.add('hidden');
   $('#review-word-list')?.classList.remove('hidden');
-  $('#review-airwrite-frame')?.classList.add('hidden');
-  $('#review-cam-placeholder')?.classList.remove('hidden');
-  $('#review-start-camera')?.classList.remove('hidden');
-  $('#review-done')?.classList.add('hidden');
-  $('#review-clear')?.classList.add('hidden');
   $('#review-next')?.classList.add('hidden');
   loadReview();
 });
 
-/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 COLLECTIONS MODULE \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+/* ════════════════════════════════════ COLLECTIONS MODULE ══════════════════════════════════════ */
 
 let currentCollection = null; // the opened collection object
+let selectedCollectionWord = null; // word selected in the topic detail view
 
 async function loadCollections() {
   const container = $('#collections');
@@ -572,18 +810,18 @@ async function loadCollections() {
     const sets = await api('/collections');
     container.innerHTML = sets.length ? sets.map(set => `
       <article class="card collection-card" data-id="${set.id}" tabindex="0" role="button"
-               aria-label="M\u1edf ch\u1ee7 \u0111\u1ec1 ${set.name}">
+               aria-label="Mở chủ đề ${set.name}">
         <span class="eyebrow">${set.category}</span>
         <h2>${set.name}</h2>
         <p>${set.description}</p>
         <div class="card-footer">
-          <span class="mode-badge">${set.total_words ?? (set.vocabulary?.length ?? 0)} t\u1eeb</span>
-          <span style="font-size:12px; color:var(--text-muted); margin-left:auto;">Nh\u1ea5n \u0111\u1ec3 xem \u2192</span>
+          <span class="mode-badge">${set.total_words ?? (set.vocabulary?.length ?? 0)} từ</span>
+          <span style="font-size:12px; color:var(--text-muted); margin-left:auto;">Nhấn để xem →</span>
         </div>
       </article>`).join('')
-    : `<div class="empty-state" style="grid-column:1/-1;">
+      : `<div class="empty-state" style="grid-column:1/-1;">
          <span class="icon">📚</span>
-         <p>Ch\u01b0a c\u00f3 b\u1ed9 t\u1eeb n\u00e0o. Th\u00eam collection v\u00e0o backend.</p>
+         <p>Chưa có bộ từ nào. Thêm collection vào backend.</p>
        </div>`;
 
     $$('.collection-card').forEach(card => {
@@ -593,6 +831,23 @@ async function loadCollections() {
   } catch (err) {
     container.innerHTML = `<p class="status-text error">${err.message}</p>`;
   }
+}
+
+async function startPracticeFromCollection(word, mode) {
+  reviewMode = mode;
+  $$('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === reviewMode));
+  updateReviewModeUI();
+
+  if (reviewSession) {
+    try {
+      await api(`/recognition/sessions/${reviewSession.session_id}/clear_all`, { method: 'POST' });
+    } catch { }
+  }
+
+  location.hash = '#review';
+  setTimeout(() => {
+    openReviewSession(word);
+  }, 120);
 }
 
 async function openCollection(id) {
@@ -608,16 +863,46 @@ async function openCollection(id) {
     if (nameEl) nameEl.textContent = set.name;
     if (descEl) descEl.textContent = set.description;
 
-    // Populate vocabulary list
+    // Populate vocabulary list with Spell and Cloze buttons on each word
     const vocabEl = $('#detail-vocab-list');
     if (vocabEl) {
       vocabEl.innerHTML = (set.vocabulary || []).map((word, idx) => `
-        <div class="vocab-card">
-          <div class="vocab-card-word">${idx + 1}. ${word.word}</div>
-          <div class="vocab-card-vi">${word.vietnamese_meaning}</div>
-          ${word.part_of_speech ? `<span class="vocab-card-pos">${word.part_of_speech}</span>` : '<span></span>'}
-          <div class="vocab-card-def">${word.definition || '<em style="color:var(--text-muted)">Ch\u01b0a c\u00f3 \u0111\u1ecbnh ngh\u0129a.</em>'}</div>
+        <div class="vocab-card collection-vocab-item" data-word="${word.normalized_word}" tabindex="0" role="region" aria-label="Từ ${word.word}">
+          <div class="vocab-card-header">
+            <div class="vocab-card-word">${idx + 1}. ${word.word}</div>
+            ${word.part_of_speech ? `<span class="vocab-card-pos">${word.part_of_speech}</span>` : ''}
+            <div class="vocab-card-vi">${word.vietnamese_meaning}</div>
+          </div>
+          <div class="vocab-card-def">${word.definition || '<em style="color:var(--text-muted)">Chưa có định nghĩa.</em>'}</div>
+          <div class="vocab-card-actions">
+            <button class="vocab-btn-spell" data-word="${word.normalized_word}" data-mode="spell" title="Ôn tập chế độ Spell (viết toàn bộ từ)">✍️ Spell</button>
+            <button class="vocab-btn-cloze" data-word="${word.normalized_word}" data-mode="cloze" title="Ôn tập chế độ Cloze (điền chữ cái đục lỗ)">🧩 Cloze</button>
+          </div>
         </div>`).join('');
+
+      $$('.vocab-btn-spell').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const word = set.vocabulary.find(w => w.normalized_word === btn.dataset.word);
+          if (word) startPracticeFromCollection(word, 'spell');
+        });
+      });
+
+      $$('.vocab-btn-cloze').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const word = set.vocabulary.find(w => w.normalized_word === btn.dataset.word);
+          if (word) startPracticeFromCollection(word, 'cloze');
+        });
+      });
+
+      $$('.collection-vocab-item').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('button')) return;
+          const word = set.vocabulary.find(w => w.normalized_word === card.dataset.word);
+          if (word) startPracticeFromCollection(word, reviewMode || 'spell');
+        });
+      });
     }
 
     // Switch view
@@ -633,25 +918,13 @@ async function openCollection(id) {
 // Back button
 $('#back-to-collections-btn')?.addEventListener('click', loadCollections);
 
-// Learn buttons in detail view
+// Learn buttons in detail view header
 $$('.collection-detail-learn-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    if (!currentCollection) return;
-    const mode = btn.dataset.mode; // 'spell' | 'cloze'
-    reviewMode = mode === 'cloze' ? 'cloze' : 'spell';
-
-    // Update mode selector tabs in review screen
-    $$('.mode-btn').forEach(b => b.classList.remove('active'));
-    const targetId = mode === 'cloze' ? 'mode-btn-cloze' : 'mode-btn-spell';
-    $(`#${targetId}`)?.classList.add('active');
-    updateReviewModeUI();
-
-    // Navigate to review tab and open with first word
-    const firstWord = currentCollection.vocabulary?.[0];
-    if (firstWord) {
-      location.hash = '#review';
-      setTimeout(() => openReviewSession(firstWord), 120);
-    }
+    if (!currentCollection || !currentCollection.vocabulary?.length) return;
+    const mode = btn.dataset.mode === 'cloze' ? 'cloze' : 'spell';
+    const targetWord = currentCollection.vocabulary[0];
+    startPracticeFromCollection(targetWord, mode);
   });
 });
 
@@ -690,7 +963,7 @@ async function loadProgress() {
         const entry = await api(`/dictionary/${item.word}`);
         const el = $(`#pvi-${item.vocabulary_id}`);
         if (el) el.textContent = entry.vietnamese_meaning;
-      } catch {}
+      } catch { }
     });
 
   } catch (err) {
@@ -754,21 +1027,9 @@ $('#start-camera')?.addEventListener('click', async () => {
   }
 });
 
-// Stop camera
+// Stop camera (translate page)
 $('#stop-camera')?.addEventListener('click', () => {
-  clearInterval(frameTimer);
-  frameTimer = null;
-  stopCamera();
-  translateSession = null;
-  $('#start-camera')?.classList.remove('hidden');
-  $('#stop-camera')?.classList.add('hidden');
-  $('#airwrite-frame')?.classList.add('hidden');
-  $('#camera-placeholder')?.classList.remove('hidden');
-  $('#camera-status').textContent = 'Camera đã tắt.';
-  const dot = $('#gesture-dot');
-  if (dot) dot.className = 'gesture-dot';
-  const label = $('#gesture-label');
-  if (label) label.textContent = 'Chưa phát hiện tay';
+  stopTranslateCamera();
 });
 
 // Clear — 1st click: xóa nét trước lần pause cuối; 2nd click liên tiếp: xóa toàn bộ canvas
@@ -784,11 +1045,11 @@ $('#clear-canvas')?.addEventListener('click', async () => {
     clearClickCount = 0;
     try {
       await api(`/recognition/sessions/${translateSession.session_id}/clear_all`, { method: 'POST' });
-    } catch {}
+    } catch { }
     // fallback: also try standard clear twice
     try {
       await api(`/recognition/sessions/${translateSession.session_id}/clear`, { method: 'POST' });
-    } catch {}
+    } catch { }
     $('#draft').textContent = '';
     const ph = $('#draft-placeholder');
     if (ph) { ph.textContent = 'Đã xóa toàn bộ canvas'; ph.style.display = ''; }
@@ -813,6 +1074,20 @@ $('#clear-canvas')?.addEventListener('click', async () => {
   }
 });
 
+// Manual editing of draft
+$('#draft')?.addEventListener('input', async () => {
+  const newDraft = ($('#draft').textContent || '').trim();
+  if (!translateSession) return;
+  translateSession.draft = newDraft;
+  $('#commit')?.classList.toggle('hidden', !newDraft);
+  try {
+    await api(`/recognition/sessions/${translateSession.session_id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ draft: newDraft }),
+    });
+  } catch { }
+});
+
 // Done button
 $('#done')?.addEventListener('click', triggerDone);
 
@@ -831,16 +1106,28 @@ $('#commit')?.addEventListener('click', async () => {
   }
 });
 
-/* ══════════════════ ROUTER ════════════════════════════════════ */
+let currentActiveScreen = null;
 
 function onHashChange() {
-  const screen = location.hash.slice(1) || 'translate';
-  $$('.screen').forEach(el => el.classList.toggle('active', el.id === screen));
-  $$('nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === `#${screen}`));
+  const newScreen = location.hash.slice(1) || 'translate';
 
-  if (screen === 'review')   loadReview();
-  if (screen === 'learn')    loadCollections();
-  if (screen === 'progress') loadProgress();
+  // Tự động tắt camera của trang trước đó khi người dùng chuyển sang trang khác
+  if (currentActiveScreen && currentActiveScreen !== newScreen) {
+    if (currentActiveScreen === 'translate') {
+      stopTranslateCamera();
+    } else if (currentActiveScreen === 'review') {
+      stopReviewCamera();
+    }
+  }
+
+  currentActiveScreen = newScreen;
+
+  $$('.screen').forEach(el => el.classList.toggle('active', el.id === newScreen));
+  $$('nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === `#${newScreen}`));
+
+  if (newScreen === 'review') loadReview();
+  if (newScreen === 'learn') loadCollections();
+  if (newScreen === 'progress') loadProgress();
 }
 
 window.addEventListener('hashchange', onHashChange);

@@ -1,13 +1,16 @@
 <!doctype html>
 <html lang="vi">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AirWrite Learn English — Học tiếng Anh bằng cử chỉ không khí</title>
-  <meta name="description" content="Học từ vựng tiếng Anh bằng cách viết chữ trong không khí trước webcam. Dịch nghĩa tiếng Việt, ôn tập và luyện chính tả thông minh.">
+  <meta name="description"
+    content="Học từ vựng tiếng Anh bằng cách viết chữ trong không khí trước webcam. Dịch nghĩa tiếng Việt, ôn tập và luyện chính tả thông minh.">
   <meta name="theme-color" content="#090e1a">
-  <link rel="stylesheet" href="styles/app.css">
+  <link rel="stylesheet" href="/static/styles/app.css">
 </head>
+
 <body>
 
   <!-- ════════════════════ TOPBAR ════════════════════ -->
@@ -18,9 +21,9 @@
     </a>
     <nav id="main-nav">
       <a href="#translate" id="nav-translate" class="active">🏠 Tra từ</a>
-      <a href="#review"    id="nav-review">📝 Ôn tập</a>
-      <a href="#learn"     id="nav-learn">🗂️ Chủ đề</a>
-      <a href="#progress"  id="nav-progress">📊 Tiến độ</a>
+      <a href="#review" id="nav-review">📝 Ôn tập</a>
+      <a href="#learn" id="nav-learn">🗂️ Chủ đề</a>
+      <a href="#progress" id="nav-progress">📊 Tiến độ</a>
     </nav>
   </header>
 
@@ -32,7 +35,8 @@
       <div class="heading">
         <p class="eyebrow">AirWrite · Tra từ tức thì</p>
         <h1>Viết một từ.<br><span>Học ngay tức thì.</span></h1>
-        <p>Dùng webcam và AirWrite để viết một từ tiếng Anh trong không khí. Hệ thống nhận diện và trả về nghĩa tiếng Việt, định nghĩa, từ loại, từ đồng nghĩa và trái nghĩa.</p>
+        <p>Dùng webcam và AirWrite để viết một từ tiếng Anh trong không khí. Hệ thống nhận diện và trả về nghĩa tiếng
+          Việt, định nghĩa, từ loại, từ đồng nghĩa và trái nghĩa.</p>
       </div>
 
       <!-- Camera + Controls -->
@@ -50,7 +54,7 @@
 
           <!-- AirWrite annotated frame -->
           <img id="airwrite-frame" class="airwrite-frame hidden"
-               alt="AirWrite camera với hand skeleton và drawing overlay">
+            alt="AirWrite camera với hand skeleton và drawing overlay">
 
           <!-- Placeholder khi camera chưa bật -->
           <div id="camera-placeholder" class="camera-placeholder">
@@ -61,7 +65,7 @@
           <!-- Camera actions -->
           <div class="actions">
             <button id="start-camera" class="btn-primary">▶ Bật camera</button>
-            <button id="stop-camera"  class="btn-quiet hidden">⏹ Tắt</button>
+            <button id="stop-camera" class="btn-quiet hidden">⏹ Tắt</button>
           </div>
 
           <!-- Status lines -->
@@ -83,12 +87,13 @@
 
           <p class="hint-text">
             Viết từng chữ cái rời từ trái sang phải.<br>
-            ✌️ Giơ 2 ngón = <strong>Pause</strong> (chuyển ký tự) &nbsp;|&nbsp; ✊ Nắm tay = tự động <strong>Done</strong>
+            ✌️ Giơ 2 ngón = <strong>Pause</strong> (chuyển ký tự) &nbsp;|&nbsp; ✊ Nắm tay = tự động
+            <strong>Done</strong>
           </p>
 
           <!-- Draft word display -->
           <div class="draft-area">
-            <span class="draft-word" id="draft"></span>
+            <span class="draft-word" id="draft" contenteditable="true" spellcheck="false" title="Nhấp vào để chỉnh sửa nếu nhận diện sai chữ"></span>
             <span class="draft-placeholder" id="draft-placeholder">Chưa có chữ nào…</span>
           </div>
 
@@ -98,7 +103,7 @@
           <!-- Actions -->
           <div class="actions">
             <button id="clear-canvas" class="btn-danger" data-clear-count="0">Xóa</button>
-            <button id="done"         class="btn-amber">✔ Done</button>
+            <button id="done" class="btn-amber">✔ Done</button>
           </div>
 
           <!-- Commit (only shown when draft is valid) -->
@@ -125,7 +130,7 @@
       <!-- Mode selector -->
       <div class="mode-selector" id="review-mode-selector">
         <button class="mode-btn active" id="mode-btn-spell" data-mode="spell">✍️ AirWrite Spell</button>
-        <button class="mode-btn"        id="mode-btn-cloze" data-mode="cloze">🧩 Cloze (Đục lỗ)</button>
+        <button class="mode-btn" id="mode-btn-cloze" data-mode="cloze">🧩 Cloze (Đục lỗ)</button>
       </div>
 
       <!-- Review layout: camera + control panel -->
@@ -140,8 +145,7 @@
             <!-- Camera panel with overlays -->
             <div class="review-camera-panel" id="review-cam-panel">
               <!-- Annotated frame -->
-              <img id="review-airwrite-frame" class="airwrite-frame hidden"
-                   alt="AirWrite review camera">
+              <img id="review-airwrite-frame" class="airwrite-frame hidden" alt="AirWrite review camera">
 
               <!-- Placeholder -->
               <div id="review-cam-placeholder" class="camera-placeholder">
@@ -174,10 +178,12 @@
 
               <!-- Spell mode hint -->
               <p id="spell-hint" class="hint-text">
-                Viết từng chữ cái trong không khí. Mỗi lần dừng tay (pause) hệ thống sẽ ghi nhận chữ vừa viết và hiện lên màn hình.
+                Viết từng chữ cái trong không khí. Mỗi lần dừng tay (pause) hệ thống sẽ ghi nhận chữ vừa viết và hiện
+                lên màn hình.
               </p>
 
-              <p id="review-word-english" class="hidden" style="font-size:13px; color: var(--text-muted); margin-top:6px;"></p>
+              <p id="review-word-english" class="hidden"
+                style="font-size:13px; color: var(--text-muted); margin-top:6px;"></p>
 
               <!-- Status / feedback -->
               <div id="review-feedback" class="hidden"></div>
@@ -185,12 +191,12 @@
               <!-- Actions -->
               <div class="actions" style="margin-top: 16px;">
                 <button id="review-start-camera" class="btn-primary">▶ Bật camera</button>
-                <button id="review-done"          class="btn-amber hidden">✔ Done</button>
-                <button id="review-clear"         class="btn-danger hidden">↩ Xóa</button>
+                <button id="review-done" class="btn-amber hidden">✔ Done</button>
+                <button id="review-clear" class="btn-danger hidden">↩ Xóa</button>
               </div>
               <div class="actions" style="margin-top: 8px;">
-                <button id="review-next"   class="btn-quiet hidden">⏭ Từ tiếp theo</button>
-                <button id="review-back"   class="btn-quiet" style="margin-left: auto;">← Quay lại</button>
+                <button id="review-next" class="btn-quiet hidden">⏭ Từ tiếp theo</button>
+                <button id="review-back" class="btn-quiet" style="margin-left: auto;">← Quay lại</button>
               </div>
 
               <p id="review-status" class="status-text" style="margin-top: 10px;">Camera chưa bật.</p>
@@ -254,6 +260,7 @@
 
   </main>
 
-  <script type="module" src="src/app.js"></script>
+  <script type="module" src="/static/src/app.js"></script>
 </body>
+
 </html>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,6 +10,23 @@ from typing import Any
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _levenshtein(s1: str, s2: str) -> int:
+    if len(s1) < len(s2):
+        return _levenshtein(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
 
 
 class Database:
@@ -136,6 +155,48 @@ class Database:
             [(w, w.casefold(), vi, d, pos, syn, ant, ex) for w, vi, d, pos, syn, ant, ex in words],
         )
 
+        # Seed the curated high-quality basic vocabulary (including auxiliary verbs, pronouns, and core daily words)
+        try:
+            from backend.storage.vocab_seeds import BASIC_VOCABULARY
+            self.connection.executemany(
+                "INSERT OR REPLACE INTO vocabulary (word, normalized_word, vietnamese_meaning, definition, part_of_speech, synonyms, antonyms, examples) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [(w, w.casefold().strip(), vi, d, pos, syn, ant, ex) for w, vi, d, pos, syn, ant, ex in BASIC_VOCABULARY],
+            )
+        except Exception as seed_err:
+            pass
+
+        # Load the bundled corpus as part of the normal startup seed so existing
+        # databases are upgraded automatically (INSERT OR IGNORE keeps curated records intact).
+        corpus_path = Path(__file__).with_name("vocab_2000.json")
+        if corpus_path.exists():
+            try:
+                corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                corpus = []
+            rows = []
+            for item in corpus if isinstance(corpus, list) else []:
+                word = str(item.get("word", "")).strip() if isinstance(item, dict) else ""
+                meaning = str(item.get("vietnamese_meaning", "")).strip() if isinstance(item, dict) else ""
+                definition = str(item.get("definition", "")).strip() if isinstance(item, dict) else ""
+                if not (word and meaning and definition):
+                    continue
+                rows.append(
+                    (
+                        word,
+                        word.casefold(),
+                        meaning,
+                        definition,
+                        item.get("part_of_speech"),
+                        json.dumps(item.get("synonyms") or [], ensure_ascii=False),
+                        json.dumps(item.get("antonyms") or [], ensure_ascii=False),
+                        json.dumps(item.get("examples") or [], ensure_ascii=False),
+                    )
+                )
+            self.connection.executemany(
+                "INSERT OR IGNORE INTO vocabulary (word, normalized_word, vietnamese_meaning, definition, part_of_speech, synonyms, antonyms, examples) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+
         collections_data = [
             ("🏠 Nhà cửa", "Nhà & Gia đình", "Từ vựng về ngôi nhà, phòng ốc và sinh hoạt hằng ngày.",
              ["house", "kitchen", "bedroom", "clean", "furniture", "garden"]),
@@ -181,9 +242,111 @@ class Database:
         self.connection.commit()
 
     def vocabulary(self, normalized_word: str) -> dict[str, Any] | None:
+        key = normalized_word.casefold().strip()
+        if not key:
+            return None
+
+        # 1. Exact match
         row = self.connection.execute(
-            "SELECT * FROM vocabulary WHERE normalized_word=?", (normalized_word.casefold().strip(),)
+            "SELECT * FROM vocabulary WHERE normalized_word=?", (key,)
         ).fetchone()
+
+        # 2. Common irregular / auxiliary verb mappings
+        if row is None:
+            irregulars = {
+                "am": "be", "is": "be", "are": "be", "was": "be", "were": "be", "been": "be", "being": "be",
+                "has": "have", "had": "have", "having": "have",
+                "does": "do", "did": "do", "done": "do", "doing": "do",
+                "went": "go", "gone": "go", "going": "go", "goes": "go",
+                "saw": "see", "seen": "see", "seeing": "see", "sees": "see",
+                "came": "come", "coming": "come", "comes": "come",
+                "ate": "eat", "eaten": "eat", "eating": "eat", "eats": "eat",
+                "took": "take", "taken": "take", "taking": "take", "takes": "take",
+                "got": "get", "gotten": "get", "getting": "get", "gets": "get",
+                "made": "make", "making": "make", "makes": "make",
+                "said": "say", "saying": "say", "says": "say",
+                "ran": "run", "running": "run", "runs": "run",
+                "wrote": "write", "written": "write", "writing": "write", "writes": "write",
+                "spoke": "speak", "spoken": "speak", "speaking": "speak", "speaks": "speak",
+                "read": "read", "reading": "read", "reads": "read",
+                "swam": "swim", "swimming": "swim", "swims": "swim",
+                "gave": "give", "given": "give", "giving": "give", "gives": "give",
+                "found": "find", "finding": "find", "finds": "find",
+                "thought": "think", "thinking": "think", "thinks": "think",
+                "told": "tell", "telling": "tell", "tells": "tell",
+                "became": "become", "becoming": "become", "becomes": "become",
+                "left": "leave", "leaving": "leave", "leaves": "leave",
+                "felt": "feel", "feeling": "feel", "feels": "feel",
+                "put": "put", "putting": "put", "puts": "put",
+                "brought": "bring", "bringing": "bring", "brings": "bring",
+                "began": "begin", "begun": "begin", "beginning": "begin", "begins": "begin",
+                "kept": "keep", "keeping": "keep", "keeps": "keep",
+                "held": "hold", "holding": "hold", "holds": "hold",
+                "children": "child", "men": "man", "women": "woman", "feet": "foot", "teeth": "tooth", "mice": "mouse",
+                "people": "person", "shoes": "shoe",
+            }
+            if key in irregulars:
+                row = self.connection.execute(
+                    "SELECT * FROM vocabulary WHERE normalized_word=?", (irregulars[key],)
+                ).fetchone()
+
+        # 3. Regular morphology fallback: plurals and verb endings
+        if row is None:
+            candidates_to_try = []
+            # -ies -> -y (e.g. countries -> country, babies -> baby, cities -> city)
+            if key.endswith("ies") and len(key) > 4:
+                candidates_to_try.append(key[:-3] + "y")
+            # -es -> root (e.g. watches -> watch, boxes -> box, dishes -> dish)
+            if key.endswith("es") and len(key) > 3:
+                candidates_to_try.append(key[:-2])
+                candidates_to_try.append(key[:-1])
+            # -s -> root (e.g. cats -> cat, books -> book, runs -> run)
+            if key.endswith("s") and len(key) > 2 and not key.endswith("ss"):
+                candidates_to_try.append(key[:-1])
+            # -ing -> root (e.g. playing -> play, reading -> read, running -> run)
+            if key.endswith("ing") and len(key) > 4:
+                candidates_to_try.append(key[:-3])
+                candidates_to_try.append(key[:-3] + "e")
+                if len(key) > 5 and key[-4] == key[-5]:
+                    candidates_to_try.append(key[:-4])
+            # -ed -> root (e.g. played -> play, cooked -> cook, liked -> like)
+            if key.endswith("ed") and len(key) > 3:
+                candidates_to_try.append(key[:-2])
+                candidates_to_try.append(key[:-1])
+                if len(key) > 4 and key[-3] == key[-4]:
+                    candidates_to_try.append(key[:-3])
+
+            for cand in candidates_to_try:
+                cand_row = self.connection.execute(
+                    "SELECT * FROM vocabulary WHERE normalized_word=?", (cand,)
+                ).fetchone()
+                if cand_row:
+                    row = cand_row
+                    break
+
+        # 4. Fuzzy closest match with edit distance = 1 (handles minor handwriting misrecognitions)
+        if row is None and len(key) >= 3:
+            candidates = self.connection.execute(
+                "SELECT * FROM vocabulary WHERE length(normalized_word) BETWEEN ? AND ?",
+                (len(key) - 1, len(key) + 1)
+            ).fetchall()
+            best_match = None
+            best_score = (-999, 999)  # (similarity score, dist)
+            for c in candidates:
+                w_cand = c["normalized_word"]
+                d = _levenshtein(key, w_cand)
+                if d <= 1:
+                    # Score by matching first char, matching last char, common prefix length
+                    same_start = 1 if (key and w_cand and key[0] == w_cand[0]) else 0
+                    same_end = 1 if (key and w_cand and key[-1] == w_cand[-1]) else 0
+                    prefix_len = len(os.path.commonprefix([key, w_cand]))
+                    score = same_start * 3 + same_end * 2 + prefix_len
+                    if score > best_score[0]:
+                        best_score = (score, d)
+                        best_match = c
+            if best_match:
+                row = best_match
+
         if row is None:
             return None
         import json

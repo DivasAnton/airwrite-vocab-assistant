@@ -1,3 +1,0 @@
--r requirements-training.txt
-tensorflow-datasets>=4.9,<5
-importlib-resources>=6,<7
