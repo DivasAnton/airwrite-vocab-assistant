@@ -1,61 +1,54 @@
 __pycache__/
 *.py[cod]
+*$py.class
 
 .venv/
+env/
+venv/
 .env
 
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
 
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+data/training_cache/*
 
 logs/
 *.log
 
 data/raw/*
 data/processed/*
-data/saved_drawings/*
 data/drawings/*
+data/saved_drawings/*
 data/preprocessed_debug/*
-data/raw_airwrite/*
-data/training_cache/*
+data/preprocessing_audit/
+data/airwrite_identity_eval/
+data/word_segmentation_eval/
+data/word_trajectory_capture/
 data/external/emnist/
 data/cache/emnist/
-data/airwrite_identity_eval/
-data/preprocessing_audit/
+
+data/learn_english.sqlite3
+data/*.sqlite3
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/saved_drawings/.gitkeep
 !data/drawings/.gitkeep
 !data/preprocessed_debug/.gitkeep
-!data/raw_airwrite/.gitkeep
 !data/training_cache/.gitkeep
 
-artifacts/models/*
-artifacts/preprocessing_audit/
-artifacts/word_segmentation_audit/
-data/word_segmentation_eval/
-data/word_trajectory_capture/
-artifacts/emnist_letters_identity/**/model.keras
+
 artifacts/emnist_letters_identity/**/checkpoints/
 artifacts/emnist_letters_identity/**/tensorboard/
-!artifacts/models/.gitkeep
+artifacts/emnist_letters_identity/v1/experiments/SMOKE/
+artifacts/preprocessing_audit/
+artifacts/word_segmentation_audit/
 
-models/*
-!models/.gitkeep
-
-# Local MediaPipe model assets are documented but not committed by default.
-models/*.task
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
+!models/hand_landmarker.task

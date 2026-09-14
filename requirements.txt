@@ -1,4 +1,24 @@
+# --- Core Computer Vision & Gesture Tracking ---
 opencv-python
 mediapipe
 numpy<2.5
 python-dotenv
+
+# --- Web Backend & API Server ---
+fastapi
+uvicorn[standard]
+pydantic>=2
+aiofiles
+
+# --- Deep Learning, Training & Datasets ---
+tensorflow>=2.16
+scikit-learn>=1.4
+matplotlib>=3.8
+tensorflow-datasets>=4.9,<5
+importlib-resources>=6,<7
+
+# --- Testing & Code Quality Tools ---
+pytest
+pytest-cov
+ruff
+mypy

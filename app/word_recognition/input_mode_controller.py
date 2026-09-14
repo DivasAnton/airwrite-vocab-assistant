@@ -9,11 +9,10 @@ class InputModeController:
         current_mode: DrawingInputMode,
         reset_temporary_state: Callable[[], None] | None = None,
     ) -> None:
+        if current_mode is not DrawingInputMode.ISOLATED_WORD:
+            raise ValueError("Only ISOLATED_WORD input is supported")
         self.current_mode = current_mode
         self._reset_temporary_state = reset_temporary_state
-
-    def set_character_mode(self) -> bool:
-        return self._set_mode(DrawingInputMode.CHARACTER)
 
     def set_word_mode(self) -> bool:
         return self._set_mode(DrawingInputMode.ISOLATED_WORD)

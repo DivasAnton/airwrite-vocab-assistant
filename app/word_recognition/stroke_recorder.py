@@ -33,6 +33,12 @@ class StrokeRecorder:
     def completed_strokes(self) -> tuple[RecordedStroke, ...]:
         return tuple(self._completed_strokes)
 
+    def truncate(self, count: int) -> None:
+        """Discard completed strokes after ``count`` for pause-level undo."""
+        if count < 0 or count > len(self._completed_strokes):
+            raise ValueError("Stroke truncate count is out of range")
+        self._completed_strokes = self._completed_strokes[:count]
+
     def start_stroke(self, point: StrokePoint) -> None:
         if self.is_recording:
             raise RuntimeError("Cannot start a stroke while another stroke is active")

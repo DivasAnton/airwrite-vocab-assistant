@@ -740,9 +740,7 @@ class WordBuilderSettings:
 
 @dataclass(frozen=True)
 class WholeWordSettings:
-    default_input_mode: str = os.getenv("DEFAULT_DRAWING_INPUT_MODE", "character")
-    character_mode_key: str = os.getenv("CHARACTER_MODE_KEY", "r")
-    word_mode_key: str = os.getenv("WORD_MODE_KEY", "w")
+    default_input_mode: str = os.getenv("DEFAULT_DRAWING_INPUT_MODE", "isolated_word")
     min_characters: int = int(os.getenv("WHOLE_WORD_MIN_CHARACTERS", "2"))
     max_characters: int = int(os.getenv("WHOLE_WORD_MAX_CHARACTERS", "12"))
     max_strokes: int = int(os.getenv("WHOLE_WORD_MAX_STROKES", "64"))
@@ -783,8 +781,8 @@ class WholeWordSettings:
     show_prediction_confidence: bool = env_to_bool("SHOW_WORD_PREDICTION_CONFIDENCE", True)
 
     def validate(self) -> None:
-        if self.default_input_mode.strip().upper() not in {"CHARACTER", "ISOLATED_WORD", "WORD"}:
-            raise ValueError("DEFAULT_DRAWING_INPUT_MODE must be character or isolated_word")
+        if self.default_input_mode.strip().upper() not in {"ISOLATED_WORD", "WORD"}:
+            raise ValueError("DEFAULT_DRAWING_INPUT_MODE must be isolated_word")
         if not 2 <= self.min_characters <= self.max_characters <= 26:
             raise ValueError("Whole-word character limits must satisfy 2 <= min <= max <= 26")
         if self.max_strokes <= 0 or self.max_points_per_stroke <= 0:
@@ -822,8 +820,6 @@ class WholeWordSettings:
         validate_confidence("WHOLE_WORD_MIN_CONFIDENCE", self.min_confidence)
         validate_confidence("WHOLE_WORD_MIN_MARGIN", self.min_margin)
         keys = (
-            self.character_mode_key,
-            self.word_mode_key,
             self.case_lowercase_key,
             self.case_uppercase_key,
             self.case_capitalize_key,

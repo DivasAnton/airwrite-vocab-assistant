@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AirWrite Learn English — Học tiếng Anh bằng cử chỉ không khí</title>
+  <meta name="description"
+    content="Học từ vựng tiếng Anh bằng cách viết chữ trong không khí trước webcam. Dịch nghĩa tiếng Việt, ôn tập và luyện chính tả thông minh.">
+  <meta name="theme-color" content="#090e1a">
+  <link rel="stylesheet" href="/static/styles/app.css">
+</head>
+
+<body>
+
+  <!-- ════════════════════ TOPBAR ════════════════════ -->
+  <header class="topbar">
+    <a class="brand" href="#translate" id="nav-brand">
+      <div class="brand-icon">✍️</div>
+      AirWrite <span>Learn English</span>
+    </a>
+    <nav id="main-nav">
+      <a href="#translate" id="nav-translate" class="active">🏠 Tra từ</a>
+      <a href="#review" id="nav-review">📝 Ôn tập</a>
+      <a href="#learn" id="nav-learn">🗂️ Chủ đề</a>
+      <a href="#progress" id="nav-progress">📊 Tiến độ</a>
+    </nav>
+  </header>
+
+  <!-- ════════════════════ MAIN ════════════════════ -->
+  <main>
+
+    <!-- ──────────────── TRANSLATE SCREEN ──────────────── -->
+    <section id="translate" class="screen active">
+      <div class="heading">
+        <p class="eyebrow">AirWrite · Tra từ tức thì</p>
+        <h1>Viết một từ.<br><span>Học ngay tức thì.</span></h1>
+        <p>Dùng webcam và AirWrite để viết một từ tiếng Anh trong không khí. Hệ thống nhận diện và trả về nghĩa tiếng
+          Việt, định nghĩa, từ loại, từ đồng nghĩa và trái nghĩa.</p>
+      </div>
+
+      <!-- Camera + Controls -->
+      <div class="workspace">
+
+        <!-- Camera Panel -->
+        <article class="panel" id="camera-panel">
+          <div class="panel-row">
+            <h2>📷 AirWrite Camera</h2>
+            <span id="camera-contract" class="mode-badge">1280×720 · 30 FPS</span>
+          </div>
+
+          <!-- Hidden raw video -->
+          <video id="camera" class="source-video" autoplay muted playsinline></video>
+
+          <!-- AirWrite annotated frame -->
+          <img id="airwrite-frame" class="airwrite-frame hidden"
+            alt="AirWrite camera với hand skeleton và drawing overlay">
+
+          <!-- Placeholder khi camera chưa bật -->
+          <div id="camera-placeholder" class="camera-placeholder">
+            <span class="icon">📷</span>
+            <p>Nhấn "Bật camera" để bắt đầu</p>
+          </div>
+
+          <!-- Camera actions -->
+          <div class="actions">
+            <button id="start-camera" class="btn-primary">▶ Bật camera</button>
+            <button id="stop-camera" class="btn-quiet hidden">⏹ Tắt</button>
+          </div>
+
+          <!-- Status lines -->
+          <p id="camera-status" class="status-text">Camera đang tắt.</p>
+
+          <!-- Gesture indicator -->
+          <div class="gesture-indicator">
+            <div class="gesture-dot" id="gesture-dot"></div>
+            <span id="gesture-label">Chưa phát hiện tay</span>
+          </div>
+        </article>
+
+        <!-- Whole-Word Capture Panel -->
+        <article class="panel" id="capture-panel">
+          <div class="panel-row">
+            <h2>✏️ Nhận diện từ</h2>
+            <span class="mode-badge">AirWrite AI</span>
+          </div>
+
+          <p class="hint-text">
+            Viết từng chữ cái rời từ trái sang phải.<br>
+            ✌️ Giơ 2 ngón = <strong>Pause</strong> (chuyển ký tự) &nbsp;|&nbsp; ✊ Nắm tay = tự động
+            <strong>Done</strong>
+          </p>
+
+          <!-- Draft word display -->
+          <div class="draft-area">
+            <span class="draft-word" id="draft" contenteditable="true" spellcheck="false" title="Nhấp vào để chỉnh sửa nếu nhận diện sai chữ"></span>
+            <span class="draft-placeholder" id="draft-placeholder">Chưa có chữ nào…</span>
+          </div>
+
+          <!-- Per-letter candidates -->
+          <div class="candidates-row" id="candidates"></div>
+
+          <!-- Actions -->
+          <div class="actions">
+            <button id="clear-canvas" class="btn-danger" data-clear-count="0">Xóa</button>
+            <button id="done" class="btn-amber">✔ Done</button>
+          </div>
+
+          <!-- Commit (only shown when draft is valid) -->
+          <div class="actions" style="margin-top: 8px;">
+            <button id="commit" class="btn-success hidden">🌐 Dịch từ này</button>
+          </div>
+        </article>
+
+      </div><!-- /.workspace -->
+
+      <!-- Translation Result (shown after commit) -->
+      <div id="translation" class="hidden"></div>
+
+    </section><!-- /#translate -->
+
+    <!-- ──────────────── REVIEW SCREEN ──────────────── -->
+    <section id="review" class="screen">
+      <div class="heading">
+        <p class="eyebrow">Ôn tập</p>
+        <h1>Luyện chính tả <span>AirWrite</span></h1>
+        <p>Nhìn từ tiếng Việt, viết tiếng Anh bằng AirWrite. Chọn chế độ phù hợp với trình độ của bạn.</p>
+      </div>
+
+      <!-- Mode selector -->
+      <div class="mode-selector" id="review-mode-selector">
+        <button class="mode-btn active" id="mode-btn-spell" data-mode="spell">✍️ AirWrite Spell</button>
+        <button class="mode-btn" id="mode-btn-cloze" data-mode="cloze">🧩 Cloze (Đục lỗ)</button>
+      </div>
+
+      <!-- Review layout: camera + control panel -->
+      <div id="review-content">
+        <!-- Word list (default view) -->
+        <div id="review-word-list" class="grid"></div>
+
+        <!-- Active review session (hidden until word selected) -->
+        <div id="review-session" class="hidden">
+          <div class="review-layout">
+
+            <!-- Camera panel with overlays -->
+            <div class="review-camera-panel" id="review-cam-panel">
+              <!-- Annotated frame -->
+              <img id="review-airwrite-frame" class="airwrite-frame hidden" alt="AirWrite review camera">
+
+              <!-- Placeholder -->
+              <div id="review-cam-placeholder" class="camera-placeholder">
+                <span class="icon">📷</span>
+                <p>Camera chưa bật</p>
+              </div>
+
+              <!-- Vietnamese word overlay (top) -->
+              <div class="vn-prompt-overlay" id="vn-prompt-overlay">
+                <div class="vn-prompt-label">Viết tiếng Anh của:</div>
+                <div class="vn-prompt-word" id="vn-prompt-word">—</div>
+              </div>
+
+              <!-- Live letters overlay (bottom) — used in Spell mode -->
+              <div class="live-letters-overlay" id="live-letters-overlay"></div>
+            </div>
+
+            <!-- Control panel -->
+            <article class="panel">
+              <div class="panel-row">
+                <h2 id="review-panel-title">✍️ AirWrite Spell</h2>
+                <span class="mode-badge" id="review-mode-badge">SPELL</span>
+              </div>
+
+              <!-- Cloze word display (hidden in spell mode) -->
+              <div id="cloze-display" class="hidden">
+                <p class="hint-text">Từ bị đục lỗ — viết AirWrite để điền chữ vào ô trống:</p>
+                <div class="cloze-word-display" id="cloze-word"></div>
+              </div>
+
+              <!-- Spell mode hint -->
+              <p id="spell-hint" class="hint-text">
+                Viết từng chữ cái trong không khí. Mỗi lần dừng tay (pause) hệ thống sẽ ghi nhận chữ vừa viết và hiện
+                lên màn hình.
+              </p>
+
+              <p id="review-word-english" class="hidden"
+                style="font-size:13px; color: var(--text-muted); margin-top:6px;"></p>
+
+              <!-- Status / feedback -->
+              <div id="review-feedback" class="hidden"></div>
+
+              <!-- Actions -->
+              <div class="actions" style="margin-top: 16px;">
+                <button id="review-start-camera" class="btn-primary">▶ Bật camera</button>
+                <button id="review-done" class="btn-amber hidden">✔ Done</button>
+                <button id="review-clear" class="btn-danger hidden">↩ Xóa</button>
+              </div>
+              <div class="actions" style="margin-top: 8px;">
+                <button id="review-next" class="btn-quiet hidden">⏭ Từ tiếp theo</button>
+                <button id="review-back" class="btn-quiet" style="margin-left: auto;">← Quay lại</button>
+              </div>
+
+              <p id="review-status" class="status-text" style="margin-top: 10px;">Camera chưa bật.</p>
+            </article>
+
+          </div><!-- /.review-layout -->
+        </div><!-- /#review-session -->
+      </div>
+
+    </section><!-- /#review -->
+
+    <!-- ──────────────── LEARN MORE SCREEN ──────────────── -->
+    <section id="learn" class="screen">
+      <!-- View 1: Lưới chủ đề -->
+      <div id="collections-view">
+        <div class="heading">
+          <p class="eyebrow">Học theo chủ đề</p>
+          <h1>Bộ từ vựng <span>theo chủ đề</span></h1>
+          <p>IELTS, TOEIC và các chủ đề thông dụng. Nhấn vào một chủ đề để xem danh sách từ và học ngay.</p>
+        </div>
+        <div id="collections" class="grid"></div>
+      </div>
+
+      <!-- View 2: Chi tiết chủ đề (ẩn mặc định) -->
+      <div id="collection-detail" class="hidden">
+        <!-- Header: Tên chủ đề + nút quay lại -->
+        <div class="collection-detail-header">
+          <button id="back-to-collections-btn" class="btn-quiet">← Quay lại</button>
+          <div class="collection-detail-meta">
+            <span class="eyebrow" id="detail-category"></span>
+            <h2 id="detail-name"></h2>
+            <p id="detail-description"></p>
+          </div>
+        </div>
+
+        <!-- Nút chọn chế độ học -->
+        <div class="collection-learn-actions">
+          <span class="collection-learn-label">Chọn chế độ luyện tập:</span>
+          <button id="detail-spell-btn" class="btn-primary collection-detail-learn-btn" data-mode="spell">
+            ✍️ AirWrite Spell
+          </button>
+          <button id="detail-cloze-btn" class="btn-amber collection-detail-learn-btn" data-mode="cloze">
+            🧩 Đục lỗ (Cloze)
+          </button>
+        </div>
+
+        <!-- Danh sách từ vựng -->
+        <div id="detail-vocab-list" class="collection-vocab-full"></div>
+      </div>
+    </section><!-- /#learn -->
+
+    <!-- ──────────────── PROGRESS SCREEN ──────────────── -->
+    <section id="progress" class="screen">
+      <div class="heading">
+        <p class="eyebrow">Tiến độ học tập</p>
+        <h1>Lịch sử <span>ôn tập</span></h1>
+        <p>Mỗi lần trả lời cập nhật mức độ thuần thục và lịch ôn tập cá nhân.</p>
+      </div>
+      <div id="progress-list" class="grid"></div>
+    </section><!-- /#progress -->
+
+  </main>
+
+  <script type="module" src="/static/src/app.js"></script>
+</body>
+
+</html>
