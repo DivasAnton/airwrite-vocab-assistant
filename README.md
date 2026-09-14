@@ -114,12 +114,6 @@ airwrite-vocab-assistant/
 │   ├── raw_airwrite/                    # Dataset gốc 3,994 ảnh nét vẽ A-Z
 │   └── manifests/                       # Bảng phân chia tập Train / Val / Test (70/15/15)
 │
-├── docs/                                # [DOCUMENTATION] Tài liệu kỹ thuật & Luận văn
-│   ├── BaoCaoDoAn2.docx                 # Báo cáo Đồ án tốt nghiệp hoàn chỉnh (Word)
-│   ├── BaoCaoDoAn2.md                   # Toàn văn báo cáo Đồ án dạng Markdown (222 KB)
-│   ├── plantuml/                        # Mã nguồn PlantUML của tất cả sơ đồ kiến trúc
-│   └── AirWrite_System_Diagrams.html    # Giao diện HTML tương tác xem sơ đồ hệ thống
-│
 ├── scripts/                             # [TOOLING] Bộ công cụ huấn luyện & đánh giá
 │   ├── train_character_model.py         # Huấn luyện mô hình Custom CNN
 │   ├── train_emnist_letters_model.py    # Huấn luyện mô hình EMNIST Identity
